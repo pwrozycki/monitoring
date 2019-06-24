@@ -1,0 +1,13 @@
+[Unit]
+Description=Event Processor
+After=zoneminder.service
+
+[Service]
+Type=simple
+User=przemas
+WorkingDirectory=/home/przemas/events_processor
+ExecStart=/usr/bin/bash -c "source /home/przemas/sandbox/bin/activate; python events_processor.py"
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
