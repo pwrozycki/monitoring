@@ -1,4 +1,3 @@
-import datetime
 import json
 import logging.config
 import os
@@ -7,15 +6,17 @@ import smtplib
 import time
 from argparse import ArgumentParser
 from configparser import ConfigParser, ExtendedInterpolation
+from datetime import datetime, timedelta
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from queue import Queue
+from threading import Thread, Lock, Condition
 
 import cv2
 import requests
 from PIL import Image
 from cachetools import TTLCache
-from edgetpu.detection.engine import DetectionEngine
 
 logging.config.fileConfig('events_processor.logging.conf')
 
@@ -23,7 +24,6 @@ logging.config.fileConfig('events_processor.logging.conf')
 # - remove intersecting boxes of smaller priority (? - when almost whole rectangle is contained within another rectangle)
 # - send events api POST and update event .mailed to true when mailed, and
 #       when fetching events (possibly) skip mailed events - unless multiple mails per event are foreseen
-# - consider async io reimplementation
 
 config = ConfigParser(interpolation=ExtendedInterpolation())
 config.read('events_processor.ini')
@@ -33,23 +33,31 @@ CACHE_SECONDS_BUFFER = int(config['timings']['cache_seconds_buffer'])
 
 
 class FrameInfo:
-    def __init__(self, event, frame, file_name):
-        self.event_json = event
+    def __init__(self, frame, image):
         self.frame_json = frame
-        self.file_name = file_name
         self.detections = None
-        self.image = None
+        self.image = image
+        self.event_info = None
+
+    def __str__(self):
+        log_dict = dict(self.event_info.event_json)
+        log_dict.update(self.frame_json)
+        return "(monitorId: {MonitorId}, eventId: {EventId}, frameId: {FrameId})".format(**log_dict)
 
 
 class EventInfo:
     def __init__(self):
-        self.frame_score = 0
-        self.frame_info = None
         self.event_json = None
+        self.frame_info = None
         self.first_detection_time = None
-        self.last_notified = None
-        self.processing_complete = False
-        self.frame_read_interrupted = False
+        self.frame_score = 0
+        self.planned_notification = None
+        self.notification_sent = False
+        self.all_frames_were_read = False
+        self.lock = Lock()
+
+    def __str__(self):
+        return "(monitorId: {MonitorId}, eventId: {Id})".format(**self.event_json)
 
 
 class RotatingPreprocessor:
@@ -64,35 +72,26 @@ class RotatingPreprocessor:
                 self._rotations[match.group(1)] = value
 
     def preprocess(self, frame_info):
-        monitor_id = frame_info.event_json['MonitorId']
+        monitor_id = frame_info.event_info.event_json['MonitorId']
         rotation = int(self._rotations.get(monitor_id, '0'))
         if rotation != 0:
-            frame_info.image = self.rotate_image(frame_info.image, rotation)
+            frame_info.image = self.rotate_and_expand_image(frame_info.image, rotation)
 
     @staticmethod
-    def rotate_image(mat, angle):
-        """
-        Rotates an image (angle in degrees) and expands image to avoid cropping
-        """
-
-        h, w = mat.shape[:2]  # image shape has 3 dimensions
-        image_center = (w / 2, h / 2)  # getRotationMatrix2D needs coordinates in reverse order (w, h) compared to shape
-
+    def rotate_and_expand_image(mat, angle):
+        h, w = mat.shape[:2]
+        image_center = (w / 2, h / 2)
         rotation_mat = cv2.getRotationMatrix2D(image_center, angle, 1.)
 
-        # rotation calculates the cos and sin, taking absolutes of those.
         abs_cos = abs(rotation_mat[0, 0])
         abs_sin = abs(rotation_mat[0, 1])
 
-        # find the new w and h bounds
         bound_w = int(h * abs_sin + w * abs_cos)
         bound_h = int(h * abs_cos + w * abs_sin)
 
-        # subtract old image center (bringing image back to origo) and adding the new image center coordinates
         rotation_mat[0, 2] += bound_w / 2 - image_center[0]
         rotation_mat[1, 2] += bound_h / 2 - image_center[1]
 
-        # rotate image with the new bounds and translated rotation matrix
         rotated_mat = cv2.warpAffine(mat, rotation_mat, (bound_w, bound_h), flags=cv2.INTER_LINEAR)
         return rotated_mat
 
@@ -102,10 +101,14 @@ class FrameReader:
     EVENT_DETAILS_URL = config['zm']['event_details_url']
     FRAME_FILE_NAME = config['zm']['frame_jpg_path']
 
-    logger = logging.getLogger("events_processor.FrameReader")
+    log = logging.getLogger("events_processor.FrameReader")
+
+    def __init__(self, get_resource=None, read_image=None):
+        self._get_resource = get_resource if not None else self._get_resource_by_request
+        self._read_image = read_image if not None else self._read_image_from_fs
 
     def _get_past_events_json(self, page):
-        events_fetch_from = datetime.datetime.now() - datetime.timedelta(seconds=EVENTS_WINDOW_SECONDS)
+        events_fetch_from = datetime.now() - timedelta(seconds=EVENTS_WINDOW_SECONDS)
 
         query = self.EVENT_LIST_URL.format(startTime=str(events_fetch_from),
                                            page=page)
@@ -153,10 +156,17 @@ class FrameReader:
                 frame_id = frame_json['FrameId']
 
                 file_name = self._get_frame_file_name(event_id, event_json, frame_id)
-                if os.path.isfile(file_name):
-                    yield FrameInfo(event_json, frame_json, file_name)
-                else:
-                    self.logger.error("File {} does not exist, skipping frame".format(file_name))
+                image = self._read_image(file_name)
+
+                if image is not None:
+                    frame_info = FrameInfo(frame_json, image)
+                    yield frame_info
+
+    def _read_image_from_fs(self, file_name):
+        if os.path.isfile(file_name):
+            return cv2.imread(file_name)
+        else:
+            self.log.error(f"File {file_name} does not exist, skipping frame")
 
     def _get_frame_file_name(self, event_id, event_json, frame_id):
         file_name = self.FRAME_FILE_NAME.format(
@@ -167,36 +177,34 @@ class FrameReader:
         )
         return file_name
 
-    def _get_resource(self, url):
+    def _get_resource_by_request(self, url):
         try:
             response = requests.get(url)
             if response.status_code == 200:
                 return response
         except requests.exceptions.RequestException as e:
             pass
-        self.logger.error("Could not retrieve resource: " + url)
+        self.log.error(f"Could not retrieve resource: {url}")
 
 
 class CoralDetector:
     MODEL_FILE = config['coral']['model_file']
     DETECTION_THRESHOLD = float(config['coral']['detection_threshold'])
 
-    logger = logging.getLogger("events_processor.CoralDetector")
+    log = logging.getLogger("events_processor.CoralDetector")
 
     def __init__(self):
+        from edgetpu.detection.engine import DetectionEngine
         self._engine = DetectionEngine(self.MODEL_FILE)
+        self._engine_lock = Lock()
 
     def detect(self, frame_info):
-        format_dict = dict(frame_info.event_json)
-        format_dict.update(frame_info.frame_json)
-        self.logger.info(
-            "Processing frame - (monitorId: {MonitorId}, eventId: {EventId}, frameId: {FrameId})".format(**format_dict))
-
         pil_img = Image.fromarray(frame_info.image)
-        detections = self._engine.DetectWithImage(pil_img,
-                                                  threshold=self.DETECTION_THRESHOLD,
-                                                  keep_aspect_ratio=True,
-                                                  relative_coord=False, top_k=10)
+        with self._engine_lock:
+            detections = self._engine.DetectWithImage(pil_img,
+                                                      threshold=self.DETECTION_THRESHOLD,
+                                                      keep_aspect_ratio=True,
+                                                      relative_coord=False, top_k=10)
         frame_info.detections = detections
 
 
@@ -205,7 +213,7 @@ class DetectionFilter:
     OBJECT_LABELS = config['coral']['object_labels'].split(',')
     MAX_BOX_AREA_PERCENTAGE = float(config['coral']['max_box_area_percentage'])
 
-    logger = logging.getLogger('events_processor.DetectionFilter')
+    log = logging.getLogger('events_processor.DetectionFilter')
 
     def __init__(self):
         self._labels = self._read_labels()
@@ -227,8 +235,8 @@ class DetectionFilter:
                 if box_area_percentage <= self.MAX_BOX_AREA_PERCENTAGE:
                     result.append(detection)
                 else:
-                    self.logger.debug("Detection discarded, exceeds area: {} > {}%".format(
-                        box_area_percentage, self.MAX_BOX_AREA_PERCENTAGE))
+                    self.log.debug(
+                        f"Detection discarded, exceeds area: {box_area_percentage} > {self.MAX_BOX_AREA_PERCENTAGE}%")
 
         frame_info.detections = result
 
@@ -244,7 +252,7 @@ class DetectionFilter:
 
 
 class DetectionRenderer:
-    logger = logging.getLogger('events_processor.DetectionRenderer')
+    log = logging.getLogger('events_processor.DetectionRenderer')
 
     def annotate_image(self, frame_info):
         image = frame_info.image
@@ -255,18 +263,13 @@ class DetectionRenderer:
             point2 = tuple(box[2:])
             cv2.rectangle(image, point1, point2, (255, 0, 0), 1)
 
-            area_percents = self._box_area(point1, point2) / self._box_area((0, 0), frame_info.image.shape[:2])
-            detection_info = {
-                'Index': i,
-                'ScorePercents': 100 * detection.score,
-                'AreaPercents': 100 * area_percents
-            }
-            text = '{ScorePercents:.0f}%'.format(**detection_info)
-            self.logger.debug(
-                'Detection properties: (index: {Index}, score: {ScorePercents:.0f}%, area: {AreaPercents:.2f}%)'.format(
-                    **detection_info))
+            area_percents = 100 * self._box_area(point1, point2) / self._box_area((0, 0), frame_info.image.shape[:2])
+            score_percents = 100 * detection.score
 
-            self._draw_text(text, box, image)
+            self.log.debug(
+                f'Rendering detection: (index: {i}, score: {score_percents:.0f}%, area: {area_percents:.2f}%)')
+
+            self._draw_text(f'{score_percents:.0f}%', box, image)
         return image
 
     def _draw_text(self, text, box, image):
@@ -284,17 +287,23 @@ class DetectionRenderer:
 
 
 def get_frame_score(frame_info):
-    return max([p.score for p in frame_info.detections])
+    if len(frame_info.detections) > 0:
+        return max([p.score for p in frame_info.detections])
+    else:
+        return 0
 
 
 class FSNotificationSender:
-    logger = logging.getLogger('events_processor.FSNotificationSender')
+    log = logging.getLogger('events_processor.FSNotificationSender')
+
+    def __init__(self):
+        super().__init__()
 
     def send_notification(self, event_info, subject, message):
         frame_info = event_info.frame_info
         cv2.imwrite("mailed_{EventId}_{FrameId}.jpg".format(**frame_info.frame_json), frame_info.image)
-        self.logger.info("Notification subject: {}".format(subject))
-        self.logger.info("Notification message: {}".format(message))
+        self.log.info(f"Notification subject: {subject}")
+        self.log.info(f"Notification message: {message}")
         return True
 
 
@@ -307,7 +316,7 @@ class MailNotificationSender:
     FROM_ADDR = config['mail']['from_addr']
     TIMEOUT = float(config['mail']['timeout'])
 
-    logger = logging.getLogger('events_processor.MailNotificationSender')
+    log = logging.getLogger('events_processor.MailNotificationSender')
 
     def send_notification(self, event_info, subject, message):
         msg = MIMEMultipart()
@@ -330,54 +339,42 @@ class MailNotificationSender:
             s.quit()
             return True
         except OSError as e:
-            self.logger.error("Error encountered when sending mail notification: " + str(e))
+            self.log.error(f"Error encountered when sending mail notification: {e}")
 
 
-class MailDetectionNotifier:
+class DetectionNotifier:
     SUBJECT = config['mail']['subject']
     MESSAGE = config['mail']['message']
 
-    logger = logging.getLogger('events_processor.MailDetectionNotifier')
+    log = logging.getLogger('events_processor.DetectionNotifier')
 
     def __init__(self, notification_sender):
         self._notification_sender = notification_sender
 
     def notify(self, event_info):
-        format_dict = dict(event_info.frame_info.event_json)
-        format_dict.update(event_info.frame_info.frame_json)
-        format_dict['Score'] = 100 * event_info.frame_score
+        mail_dict = dict(event_info.event_json)
+        mail_dict.update(event_info.frame_info.frame_json)
+        mail_dict['Score'] = 100 * event_info.frame_score
 
-        subject = self.SUBJECT.format(**format_dict)
-        message = self.MESSAGE.format(**format_dict)
+        subject = self.SUBJECT.format(**mail_dict)
+        message = self.MESSAGE.format(**mail_dict)
 
         return self._notification_sender(event_info, subject, message)
 
 
-class EventController:
+class FrameReaderWorker(Thread):
     EVENT_LOOP_SECONDS = int(config['timings']['event_loop_seconds'])
-    NOTIFICATION_DELAY_SECONDS = int(config['timings']['notification_delay_seconds'])
 
-    logger = logging.getLogger("events_processor.EventController")
+    log = logging.getLogger("events_processor.FrameReaderWorker")
 
-    def __init__(self,
-                 event_ids=None,
-                 image_preprocess=RotatingPreprocessor().preprocess,
-                 detect=CoralDetector().detect,
-                 filter_detections=DetectionFilter().filter_detections,
-                 calculate_score=get_frame_score,
-                 annotate_image=DetectionRenderer().annotate_image,
-                 send_notification=MailNotificationSender().send_notification):
-        self._image_preprocess = image_preprocess
-        self._detect = detect
-        self._filter_detections = filter_detections
-        self._annotate_image = annotate_image
-        self._notify = MailDetectionNotifier(send_notification).notify
-        self._calculate_score = calculate_score
+    def __init__(self, frame_queue, event_ids=None, frame_reader=FrameReader(), reshedule_notification=None):
+        super().__init__()
+        self._frame_queue = frame_queue
+        self._events_cache = TTLCache(maxsize=10000000, ttl=EVENTS_WINDOW_SECONDS + CACHE_SECONDS_BUFFER)
+        self._frames_cache = TTLCache(maxsize=10000000, ttl=EVENTS_WINDOW_SECONDS + CACHE_SECONDS_BUFFER)
 
-        self._events_cache = TTLCache(maxsize=1000_0000, ttl=EVENTS_WINDOW_SECONDS + CACHE_SECONDS_BUFFER)
-        self._frames_cache = TTLCache(maxsize=1000_0000, ttl=EVENTS_WINDOW_SECONDS + CACHE_SECONDS_BUFFER)
-
-        self._frame_reader = FrameReader()
+        self._reshedule_notification = reshedule_notification
+        self._frame_reader = frame_reader
         if event_ids:
             self._events_iter = lambda: self._frame_reader.events_by_id_iter(event_ids)
         else:
@@ -385,27 +382,25 @@ class EventController:
 
     def run(self):
         while True:
-            start = time.time()
+            self._collect_events()
+            time.sleep(5)
 
-            self.logger.info("Fetching event list")
-            self._collect_events(start)
-            self._process_events()
-
-            wait_time = self.EVENT_LOOP_SECONDS - (time.time() - start)
-            if wait_time > 0:
-                self.logger.info("Waiting {}".format(wait_time))
-                time.sleep(wait_time)
-
-    def _collect_events(self, start):
+    def _collect_events(self):
+        self.log.info("Fetching event list")
         for event_json in self._events_iter():
             event_id = event_json['Id']
             event_info = self._events_cache.setdefault(event_id, EventInfo())
-            event_info.event_json = event_json
 
-            if event_info.processing_complete:
-                continue
+            with event_info.lock:
+                event_info.event_json = event_json
+                if event_info.all_frames_were_read or event_info.notification_sent:
+                    continue
+                if not event_info.all_frames_were_read and event_info.event_json['EndTime'] is not None:
+                    event_info.all_frames_were_read = True
+                    if event_info.planned_notification and not event_info.notification_sent:
+                        self._reshedule_notification(event_info)
 
-            self.logger.info("Reading event (monitorId: {MonitorId}, eventId: {Id})".format(**event_json))
+            self.log.info(f"Reading event {event_info}")
 
             for frame_info in self._frame_reader.frames_iter(event_ids=(event_id,)):
                 if frame_info.frame_json['Type'] != 'Alarm':
@@ -416,64 +411,159 @@ class EventController:
                     continue
                 self._frames_cache[key] = 1
 
-                frame_info.image = cv2.imread(frame_info.file_name)
-                if self._image_preprocess:
-                    self._image_preprocess(frame_info)
+                frame_info.event_info = event_info
+                self._frame_queue.put(frame_info)
 
-                self._detect(frame_info)
-                self._filter_detections(frame_info)
-                self._record_event_frame(event_info, frame_info)
 
-                if (time.time() - start > self.EVENT_LOOP_SECONDS):
-                    event_info.frame_read_interrupted = True
-                    return
+class FrameProcessorWorker(Thread):
+    log = logging.getLogger("events_processor.FrameProcessorWorker")
 
-    def _record_event_frame(self, event_info, frame_info=None):
-        if len(frame_info.detections) > 0:
-            score = self._calculate_score(frame_info)
+    def __init__(self, frame_queue, detect, register_notification, preprocess_image=RotatingPreprocessor().preprocess,
+                 filter_detections=DetectionFilter().filter_detections, calculate_score=get_frame_score):
+        super().__init__()
+        self._frame_queue = frame_queue
+        self._preprocess_image = preprocess_image
+        self._detect = detect
+        self._filter_detections = filter_detections
+        self._calculate_score = calculate_score
+        self._register_notification = register_notification
+
+    def run(self):
+        while True:
+            frame_info = self._frame_queue.get()
+
+            self.log.info(f"Processing frame - {frame_info}")
+
+            if self._preprocess_image:
+                self._preprocess_image(frame_info)
+            self._detect(frame_info)
+            self._filter_detections(frame_info)
+            self._record_event_frame(frame_info)
+
+    def _record_event_frame(self, frame_info=None):
+        event_info = frame_info.event_info
+
+        score = self._calculate_score(frame_info)
+
+        with event_info.lock:
             if score > event_info.frame_score:
                 event_info.frame_info = frame_info
                 event_info.frame_score = score
 
                 if event_info.first_detection_time is None:
-                    event_info.first_detection_time = datetime.datetime.now()
+                    event_info.first_detection_time = time.monotonic()
+                self._register_notification(event_info)
 
-    def _process_events(self):
-        for (event_id, event_info) in self._events_cache.items():
-            if event_info.processing_complete:
-                continue
 
-            all_frames_were_read = (event_info.event_json['EndTime'] and
-                                    not event_info.frame_read_interrupted)
+class NotificationWorker(Thread):
+    NOTIFICATION_DELAY_SECONDS = int(config['timings']['notification_delay_seconds'])
 
-            if event_info.first_detection_time is not None:
+    log = logging.getLogger("events_processor.NotificationWorker")
 
-                now = datetime.datetime.now()
-                notification_delay_seconds = datetime.timedelta(seconds=self.NOTIFICATION_DELAY_SECONDS)
-                notification_delay_elapsed = now - notification_delay_seconds > event_info.first_detection_time
+    def __init__(self, notify, annotate_image=DetectionRenderer().annotate_image):
+        super().__init__()
+        self._notify = notify
+        self._annotate_image = annotate_image
 
-                if event_info.last_notified is None:
-                    if (notification_delay_elapsed or all_frames_were_read):
-                        self._annotate_image(event_info.frame_info)
-                        notification_succeeded = self._notify(event_info)
-                        if notification_succeeded:
-                            event_info.last_notified = now
-                            event_info.processing_complete = True
-                            event_info.frame_info = None
-                            self.logger.info(
-                                "Sent notification for event (monitorId: {MonitorId}, eventId: {Id})".format(
-                                    **event_info.event_json))
-                    else:
-                        self.logger.info(
-                            "Waiting to sent notification for event (monitorId: {MonitorId}, eventId: {Id})".format(
-                                **event_info.event_json))
-            elif all_frames_were_read:
-                event_info.processing_complete = True
-                self.logger.info(
-                    "All frames were read for event (monitorId: {MonitorId}, eventId: {Id}) - no detections".format(
-                        **event_info.event_json))
+        self._notifications = set()
+        self._condition = Condition()
 
-            event_info.frame_read_interrupted = None
+    def register_notification(self, event_info: EventInfo):
+        if event_info.notification_sent:
+            return
+
+        self.log.info(f"Registering event notification {event_info.frame_info}")
+        self._calculate_notification_time(event_info)
+        with self._condition:
+            self._notifications.add(event_info)
+            self._condition.notify_all()
+
+    def reshedule_notification(self, event_info):
+        with self._condition:
+            self._calculate_notification_time(event_info)
+            self._condition.notify_all()
+
+    def _calculate_notification_time(self, event_info):
+        if not event_info.all_frames_were_read:
+            delay = event_info.first_detection_time + self.NOTIFICATION_DELAY_SECONDS - time.monotonic()
+            notification_delay = max(delay, 0)
+        else:
+            notification_delay = 0
+        event_info.planned_notification = time.monotonic() + notification_delay
+
+    def run(self):
+        while True:
+            with self._condition:
+                event_info = self._get_closest_notification_event()
+                if event_info:
+                    timeout = event_info.planned_notification - time.monotonic()
+                else:
+                    timeout = None
+
+                if timeout is None or timeout > 0:
+                    self._condition.wait(timeout)
+                    continue
+
+            self._annotate_image(event_info.frame_info)
+            notification_succeeded = self._notify(event_info)
+            if notification_succeeded:
+                with event_info.lock:
+                    event_info.notification_sent = True
+                    event_info.frame_info = None
+
+                with self._condition:
+                    self._notifications.remove(event_info)
+            else:
+                self.log.error("Notification error, throttling")
+                time.sleep(5)
+
+    def _get_closest_notification_event(self) -> EventInfo:
+        event_info = None
+        for notification in self._notifications:
+            if event_info is None or event_info.planned_notification < event_info.planned_notification:
+                event_info = notification
+        return event_info
+
+
+class MainController:
+    FRAME_PROCESSING_THREADS = int(config['threading']['frame_processing_threads'])
+    THREAD_WATCHDOG_DELAY = int(config['threading']['thread_watchdog_delay'])
+
+
+    log = logging.getLogger("events_processor.EventController")
+
+    def __init__(self,
+                 event_ids=None,
+                 detect=None,
+                 send_notification=MailNotificationSender().send_notification,
+                 frame_reader=None):
+        if detect is None:
+            detect = CoralDetector().detect
+        self._frame_queue = Queue()
+
+        self._notification_worker = NotificationWorker(notify=(DetectionNotifier(send_notification).notify))
+        self._frame_processor_workers = []
+        for a in range(self.FRAME_PROCESSING_THREADS):
+            processor_worker = FrameProcessorWorker(self._frame_queue,
+                                                    detect=detect,
+                                                    register_notification=self._notification_worker.register_notification)
+            self._frame_processor_workers.append(processor_worker)
+        self._frame_reader_worker = FrameReaderWorker(self._frame_queue,
+                                                      event_ids=event_ids,
+                                                      frame_reader=frame_reader,
+                                                      reshedule_notification=self._notification_worker.reshedule_notification)
+
+    def run(self):
+        threads = self._frame_processor_workers + [self._frame_reader_worker, self._notification_worker]
+        for thread in threads:
+            thread.daemon = True
+            thread.start()
+
+        self._exit_when_any_thread_terminates(threads)
+
+    def _exit_when_any_thread_terminates(self, threads):
+        while all(t.is_alive() for t in threads):
+            time.sleep(self.THREAD_WATCHDOG_DELAY)
 
 
 def main():
@@ -490,7 +580,7 @@ def main():
     if args.read_events:
         event_controller_args['event_ids'] = args.read_events.split(',')
 
-    EventController(**event_controller_args).run()
+    MainController(**event_controller_args).run()
 
 
 if __name__ == '__main__':
