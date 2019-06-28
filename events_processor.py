@@ -104,8 +104,8 @@ class FrameReader:
     log = logging.getLogger("events_processor.FrameReader")
 
     def __init__(self, get_resource=None, read_image=None):
-        self._get_resource = get_resource if not None else self._get_resource_by_request
-        self._read_image = read_image if not None else self._read_image_from_fs
+        self._get_resource = get_resource if get_resource is not None else self._get_resource_by_request
+        self._read_image = read_image if read_image is not None else self._read_image_from_fs
 
     def _get_past_events_json(self, page):
         events_fetch_from = datetime.now() - timedelta(seconds=EVENTS_WINDOW_SECONDS)
@@ -367,14 +367,14 @@ class FrameReaderWorker(Thread):
 
     log = logging.getLogger("events_processor.FrameReaderWorker")
 
-    def __init__(self, frame_queue, event_ids=None, frame_reader=FrameReader(), reshedule_notification=None):
+    def __init__(self, frame_queue, event_ids=None, frame_reader=None, reshedule_notification=None):
         super().__init__()
         self._frame_queue = frame_queue
         self._events_cache = TTLCache(maxsize=10000000, ttl=EVENTS_WINDOW_SECONDS + CACHE_SECONDS_BUFFER)
         self._frames_cache = TTLCache(maxsize=10000000, ttl=EVENTS_WINDOW_SECONDS + CACHE_SECONDS_BUFFER)
 
         self._reshedule_notification = reshedule_notification
-        self._frame_reader = frame_reader
+        self._frame_reader = frame_reader if frame_reader is not None else FrameReader()
         if event_ids:
             self._events_iter = lambda: self._frame_reader.events_by_id_iter(event_ids)
         else:
