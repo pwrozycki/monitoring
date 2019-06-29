@@ -17,6 +17,7 @@ import cv2
 import requests
 from PIL import Image
 from cachetools import TTLCache
+from shapely import geometry
 
 logging.config.fileConfig('events_processor.logging.conf')
 
@@ -92,7 +93,7 @@ class RotatingPreprocessor:
         rotation_mat[0, 2] += bound_w / 2 - image_center[0]
         rotation_mat[1, 2] += bound_h / 2 - image_center[1]
 
-        rotated_mat = cv2.warpAffine(mat, rotation_mat, (bound_w, bound_h), flags=cv2.INTER_LINEAR)
+        rotated_mat = cv2.warpAffine(mat, rotation_mat, (bound_w, bound_h), flags=cv2.INTER_CUBIC)
         return rotated_mat
 
 
@@ -217,6 +218,28 @@ class DetectionFilter:
 
     def __init__(self):
         self._labels = self._read_labels()
+        self._config_parse()
+
+    def _config_parse(self):
+        self._excluded_points = {}
+        self._excluded_polygons = {}
+        for (key, value) in config['coral'].items():
+            m = re.match(r'exclude_points(\d+)', key)
+            if m:
+                monitor_id = m.group(1)
+                self._excluded_points[monitor_id] = [
+                    geometry.Point(*map(int, m.groups())) for m in re.finditer('(\d+),(\d+)', value)]
+
+            m = re.match(r'exclude_polygons(\d+)', key)
+            if m:
+                monitor_id = m.group(1)
+                self._excluded_polygons[monitor_id] = [
+                    geometry.Polygon(self.group(x.group(0))) for x in re.finditer('((?:\d+,\d+,?)+)', value)]
+
+    def group(self, lst):
+        i = iter(int(x) for x in lst.split(','))
+        for e in i:
+            yield (e, next(i))
 
     def _read_labels(self):
         with open(self.LABEL_FILE, 'r', encoding="utf-8") as f:
@@ -230,18 +253,56 @@ class DetectionFilter:
     def filter_detections(self, frame_info):
         result = []
         for detection in frame_info.detections:
-            box_area_percentage = self._detection_area(detection) / self._frame_area(frame_info) * 100
             if self._labels[detection.label_id] in self.OBJECT_LABELS:
-                if box_area_percentage <= self.MAX_BOX_AREA_PERCENTAGE:
-                    result.append(detection)
-                else:
-                    self.log.debug(
-                        f"Detection discarded, exceeds area: {box_area_percentage} > {self.MAX_BOX_AREA_PERCENTAGE}%")
+                monitor_id = frame_info.event_info.event_json['MonitorId']
+                box = tuple(int(x) for x in detection.bounding_box.flatten().tolist())
 
-        frame_info.detections = result
+                if self._detection_area_exceeded(box, frame_info):
+                    continue
 
-    def _detection_area(self, detection):
-        (x1, y1, x2, y2) = detection.bounding_box.flatten().tolist()
+                if self._detection_contains_excluded_point(box, monitor_id):
+                    continue
+
+                if self._detection_intersects_excluded_polygon(box, monitor_id):
+                    continue
+
+                result.append(detection)
+
+            frame_info.detections = result
+
+    def _detection_area_exceeded(self, box, frame_info):
+        box_area_percentage = self._detection_area(box) / self._frame_area(frame_info) * 100
+        if box_area_percentage > self.MAX_BOX_AREA_PERCENTAGE:
+            self.log.debug(
+                f"Detection discarded, exceeds area: {box_area_percentage} > {self.MAX_BOX_AREA_PERCENTAGE}%")
+            return True
+        return False
+
+    def _detection_intersects_excluded_polygon(self, box, monitor_id):
+        detection_box = geometry.box(*box)
+
+        excluded_polygons = self._excluded_polygons.get(monitor_id, [])
+        if excluded_polygons:
+            polygons = tuple(filter(detection_box.intersects, excluded_polygons))
+            if polygons:
+                self.log.debug(f"Detection discarded, {box} intersects one of excluded polygons")
+                return True
+
+        return False
+
+    def _detection_contains_excluded_point(self, box, monitor_id):
+        detection_box = geometry.box(*box)
+
+        excluded_points = self._excluded_points.get(monitor_id, [])
+        if excluded_points:
+            points = tuple(filter(detection_box.contains, excluded_points))
+            if points:
+                self.log.debug(f"Detection discarded, {box} contains one of excluded points")
+                return True
+        return False
+
+    def _detection_area(self, box):
+        (x1, y1, x2, y2) = box
         area = (x2 - x1) * (y2 - y1)
         return area
 
@@ -267,7 +328,7 @@ class DetectionRenderer:
             score_percents = 100 * detection.score
 
             self.log.debug(
-                f'Rendering detection: (index: {i}, score: {score_percents:.0f}%, area: {area_percents:.2f}%)')
+                f'Rendering detection: (index: {i}, score: {score_percents:.0f}%, area: {area_percents:.1f}%), box: {box}')
 
             self._draw_text(f'{score_percents:.0f}%', box, image)
         return image
@@ -528,7 +589,6 @@ class NotificationWorker(Thread):
 class MainController:
     FRAME_PROCESSING_THREADS = int(config['threading']['frame_processing_threads'])
     THREAD_WATCHDOG_DELAY = int(config['threading']['thread_watchdog_delay'])
-
 
     log = logging.getLogger("events_processor.EventController")
 

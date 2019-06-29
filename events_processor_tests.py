@@ -11,7 +11,7 @@ class Response:
 
 
 class Detection:
-    def __init__(self, label_id=1, score=0.5, bounding_box=np.array([1, 50, 1, 50])):
+    def __init__(self, label_id=1, score=0.5, bounding_box=np.array([1, 1, 50, 50])):
         self.label_id = label_id
         self.bounding_box = bounding_box
         self.score = score
@@ -42,7 +42,7 @@ class ResourceProducer:
                 'Event': {
                     'Id': event_id,
                     'EndTime': end_time,
-                    'MonitorId': 1,
+                    'MonitorId': '1',
                     'StartTime': '2019-08-08'
                 }
             }],
