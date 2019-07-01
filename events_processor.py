@@ -257,24 +257,24 @@ class DetectionFilter:
                 monitor_id = frame_info.event_info.event_json['MonitorId']
                 box = tuple(int(x) for x in detection.bounding_box.flatten().tolist())
 
-                if self._detection_area_exceeded(box, frame_info):
-                    continue
-
                 if self._detection_contains_excluded_point(box, monitor_id):
                     continue
 
                 if self._detection_intersects_excluded_polygon(box, monitor_id):
                     continue
 
+                if self._detection_area_exceeded(box, frame_info):
+                    continue
+
                 result.append(detection)
 
-            frame_info.detections = result
+        frame_info.detections = result
 
     def _detection_area_exceeded(self, box, frame_info):
         box_area_percentage = self._detection_area(box) / self._frame_area(frame_info) * 100
         if box_area_percentage > self.MAX_BOX_AREA_PERCENTAGE:
             self.log.debug(
-                f"Detection discarded, exceeds area: {box_area_percentage} > {self.MAX_BOX_AREA_PERCENTAGE}%")
+                f"Detection discarded, {box} exceeds area: {box_area_percentage} > {self.MAX_BOX_AREA_PERCENTAGE}%")
             return True
         return False
 
