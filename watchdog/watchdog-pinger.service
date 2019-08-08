@@ -1,0 +1,7 @@
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/watchdog-pinger.sh
+PIDFile=/run/watchdog-pinger.pid
+
+[Install]
+WantedBy=default.target
