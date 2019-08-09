@@ -1,0 +1,13 @@
+[Unit]
+Description=autossh
+After=network-online.target
+
+[Service]
+User=autossh
+EnvironmentFile=/etc/default/autossh
+ExecStart=/usr/bin/autossh -N -M 0 -q -o ServerAliveInterval=30 -o ServerAliveCountMax=2  -o ExitOnForwardFailure=yes -R 2223:localhost:22 user@host -i /home/autossh/.ssh/id_ecdsa
+Restart=always
+RestartSec=60
+
+[Install]
+WantedBy=multi-user.target
