@@ -29,8 +29,8 @@ logging.config.fileConfig('events_processor.logging.conf')
 config = ConfigParser(interpolation=ExtendedInterpolation())
 config.read('events_processor.ini')
 
-EVENTS_WINDOW_SECONDS = int(config['timings']['events_window_seconds'])
-CACHE_SECONDS_BUFFER = int(config['timings']['cache_seconds_buffer'])
+EVENTS_WINDOW_SECONDS = config['timings'].getint('events_window_seconds')
+CACHE_SECONDS_BUFFER = config['timings'].getint('cache_seconds_buffer')
 
 
 class FrameInfo:
@@ -105,8 +105,8 @@ class FrameReader:
     log = logging.getLogger("events_processor.FrameReader")
 
     def __init__(self, get_resource=None, read_image=None):
-        self._get_resource = get_resource if get_resource is not None else self._get_resource_by_request
-        self._read_image = read_image if read_image is not None else self._read_image_from_fs
+        self._get_resource = get_resource if get_resource else self._get_resource_by_request
+        self._read_image = read_image if read_image else self._read_image_from_fs
 
     def _get_past_events_json(self, page):
         events_fetch_from = datetime.now() - timedelta(seconds=EVENTS_WINDOW_SECONDS)
@@ -190,7 +190,7 @@ class FrameReader:
 
 class CoralDetector:
     MODEL_FILE = config['coral']['model_file']
-    DETECTION_THRESHOLD = float(config['coral']['detection_threshold'])
+    MIN_SCORE = float(config['coral']['min_score'])
 
     log = logging.getLogger("events_processor.CoralDetector")
 
@@ -203,16 +203,16 @@ class CoralDetector:
         pil_img = Image.fromarray(frame_info.image)
         with self._engine_lock:
             detections = self._engine.DetectWithImage(pil_img,
-                                                      threshold=self.DETECTION_THRESHOLD,
+                                                      threshold=self.MIN_SCORE,
                                                       keep_aspect_ratio=True,
                                                       relative_coord=False, top_k=10)
         frame_info.detections = detections
 
 
 class DetectionFilter:
-    LABEL_FILE = config['coral']['label_file']
-    OBJECT_LABELS = config['coral']['object_labels'].split(',')
-    MAX_BOX_AREA_PERCENTAGE = float(config['coral']['max_box_area_percentage'])
+    LABEL_FILE = config['detection_filter']['label_file']
+    OBJECT_LABELS = config['detection_filter']['object_labels'].split(',')
+    MAX_BOX_AREA_PERCENTAGE = float(config['detection_filter']['max_box_area_percentage'])
 
     log = logging.getLogger('events_processor.DetectionFilter')
 
@@ -223,14 +223,20 @@ class DetectionFilter:
     def _config_parse(self):
         self._excluded_points = {}
         self._excluded_polygons = {}
-        for (key, value) in config['coral'].items():
-            m = re.match(r'exclude_points(\d+)', key)
+        self._min_score = {}
+        for (key, value) in config['detection_filter'].items():
+            m = re.match(r'min_score(\d+)', key)
+            if m:
+                monitor_id = m.group(1)
+                self._min_score[monitor_id] = float(value)
+
+            m = re.match(r'excluded_points(\d+)', key)
             if m:
                 monitor_id = m.group(1)
                 self._excluded_points[monitor_id] = [
                     geometry.Point(*map(int, m.groups())) for m in re.finditer('(\d+),(\d+)', value)]
 
-            m = re.match(r'exclude_polygons(\d+)', key)
+            m = re.match(r'excluded_polygons(\d+)', key)
             if m:
                 monitor_id = m.group(1)
                 self._excluded_polygons[monitor_id] = [
@@ -254,13 +260,16 @@ class DetectionFilter:
         result = []
         for detection in frame_info.detections:
             if self._labels[detection.label_id] in self.OBJECT_LABELS:
-                monitor_id = frame_info.event_info.event_json['MonitorId']
                 box = tuple(int(x) for x in detection.bounding_box.flatten().tolist())
 
-                if self._detection_contains_excluded_point(box, monitor_id):
+                monitor_id = frame_info.event_info.event_json['MonitorId']
+                if detection.score < self._min_score.get(monitor_id, 0):
                     continue
 
-                if self._detection_intersects_excluded_polygon(box, monitor_id):
+                if self._detection_contains_excluded_point(box, frame_info):
+                    continue
+
+                if self._detection_intersects_excluded_polygon(box, frame_info):
                     continue
 
                 if self._detection_area_exceeded(box, frame_info):
@@ -268,36 +277,39 @@ class DetectionFilter:
 
                 result.append(detection)
 
+        self.log.debug(f"Frame {frame_info} has {len(result)} accepted detections")
         frame_info.detections = result
 
     def _detection_area_exceeded(self, box, frame_info):
         box_area_percentage = self._detection_area(box) / self._frame_area(frame_info) * 100
         if box_area_percentage > self.MAX_BOX_AREA_PERCENTAGE:
             self.log.debug(
-                f"Detection discarded, {box} exceeds area: {box_area_percentage} > {self.MAX_BOX_AREA_PERCENTAGE}%")
+                f"Detection discarded frame {frame_info}, {box} exceeds area: {box_area_percentage} > {self.MAX_BOX_AREA_PERCENTAGE}%")
             return True
         return False
 
-    def _detection_intersects_excluded_polygon(self, box, monitor_id):
+    def _detection_intersects_excluded_polygon(self, box, frame_info):
+        monitor_id = frame_info.event_info.event_json['MonitorId']
         detection_box = geometry.box(*box)
 
         excluded_polygons = self._excluded_polygons.get(monitor_id, [])
         if excluded_polygons:
             polygons = tuple(filter(detection_box.intersects, excluded_polygons))
             if polygons:
-                self.log.debug(f"Detection discarded, {box} intersects one of excluded polygons")
+                self.log.debug(f"Detection discarded frame {frame_info}, {box} intersects one of excluded polygons")
                 return True
 
         return False
 
-    def _detection_contains_excluded_point(self, box, monitor_id):
+    def _detection_contains_excluded_point(self, box, frame_info):
+        monitor_id = frame_info.event_info.event_json['MonitorId']
         detection_box = geometry.box(*box)
 
         excluded_points = self._excluded_points.get(monitor_id, [])
         if excluded_points:
             points = tuple(filter(detection_box.contains, excluded_points))
             if points:
-                self.log.debug(f"Detection discarded, {box} contains one of excluded points")
+                self.log.debug(f"Detection discarded frame {frame_info}, {box} contains one of excluded points")
                 return True
         return False
 
@@ -424,7 +436,7 @@ class DetectionNotifier:
 
 
 class FrameReaderWorker(Thread):
-    EVENT_LOOP_SECONDS = int(config['timings']['event_loop_seconds'])
+    EVENT_LOOP_SECONDS = config['timings'].getint('event_loop_seconds')
 
     log = logging.getLogger("events_processor.FrameReaderWorker")
 
@@ -435,7 +447,7 @@ class FrameReaderWorker(Thread):
         self._frames_cache = TTLCache(maxsize=10000000, ttl=EVENTS_WINDOW_SECONDS + CACHE_SECONDS_BUFFER)
 
         self._reshedule_notification = reshedule_notification
-        self._frame_reader = frame_reader if frame_reader is not None else FrameReader()
+        self._frame_reader = frame_reader if frame_reader else FrameReader()
         if event_ids:
             self._events_iter = lambda: self._frame_reader.events_by_id_iter(event_ids)
         else:
@@ -444,7 +456,7 @@ class FrameReaderWorker(Thread):
     def run(self):
         while True:
             self._collect_events()
-            time.sleep(5)
+            time.sleep(self.EVENT_LOOP_SECONDS)
 
     def _collect_events(self):
         self.log.info("Fetching event list")
@@ -479,13 +491,13 @@ class FrameReaderWorker(Thread):
 class FrameProcessorWorker(Thread):
     log = logging.getLogger("events_processor.FrameProcessorWorker")
 
-    def __init__(self, frame_queue, detect, register_notification, preprocess_image=RotatingPreprocessor().preprocess,
-                 filter_detections=DetectionFilter().filter_detections, calculate_score=get_frame_score):
+    def __init__(self, frame_queue, detect, register_notification, preprocess_image=None,
+                 filter_detections=None, calculate_score=get_frame_score):
         super().__init__()
         self._frame_queue = frame_queue
-        self._preprocess_image = preprocess_image
+        self._preprocess_image = preprocess_image if preprocess_image else RotatingPreprocessor().preprocess
         self._detect = detect
-        self._filter_detections = filter_detections
+        self._filter_detections = filter_detections if filter_detections else DetectionFilter().filter_detections
         self._calculate_score = calculate_score
         self._register_notification = register_notification
 
@@ -493,13 +505,14 @@ class FrameProcessorWorker(Thread):
         while True:
             frame_info = self._frame_queue.get()
 
-            self.log.info(f"Processing frame - {frame_info}")
+            if frame_info.event_info.notification_sent:
+                self.log.info(
+                    f"Notification already sent for event: {frame_info.event_info}, skipping processing of frame: {frame_info}")
+                continue
 
-            if self._preprocess_image:
-                self._preprocess_image(frame_info)
-            self._detect(frame_info)
-            self._filter_detections(frame_info)
-            self._record_event_frame(frame_info)
+            for action in (self._preprocess_image, self._detect, self._filter_detections, self._record_event_frame):
+                if action:
+                    action(frame_info)
 
     def _record_event_frame(self, frame_info=None):
         event_info = frame_info.event_info
@@ -517,14 +530,14 @@ class FrameProcessorWorker(Thread):
 
 
 class NotificationWorker(Thread):
-    NOTIFICATION_DELAY_SECONDS = int(config['timings']['notification_delay_seconds'])
+    NOTIFICATION_DELAY_SECONDS = config['timings'].getint('notification_delay_seconds')
 
     log = logging.getLogger("events_processor.NotificationWorker")
 
-    def __init__(self, notify, annotate_image=DetectionRenderer().annotate_image):
+    def __init__(self, notify, annotate_image=None):
         super().__init__()
         self._notify = notify
-        self._annotate_image = annotate_image
+        self._annotate_image = annotate_image if annotate_image else DetectionRenderer().annotate_image
 
         self._notifications = set()
         self._condition = Condition()
@@ -533,7 +546,7 @@ class NotificationWorker(Thread):
         if event_info.notification_sent:
             return
 
-        self.log.info(f"Registering event notification {event_info.frame_info}")
+        self.log.info(f"Registering event notification {event_info.frame_info}, score: {event_info.frame_score}")
         self._calculate_notification_time(event_info)
         with self._condition:
             self._notifications.add(event_info)
@@ -587,27 +600,29 @@ class NotificationWorker(Thread):
 
 
 class MainController:
-    FRAME_PROCESSING_THREADS = int(config['threading']['frame_processing_threads'])
-    THREAD_WATCHDOG_DELAY = int(config['threading']['thread_watchdog_delay'])
+    FRAME_PROCESSING_THREADS = config['threading'].getint('frame_processing_threads')
+    THREAD_WATCHDOG_DELAY = config['threading'].getint('thread_watchdog_delay')
 
     log = logging.getLogger("events_processor.EventController")
 
     def __init__(self,
                  event_ids=None,
                  detect=None,
-                 send_notification=MailNotificationSender().send_notification,
+                 send_notification=None,
                  frame_reader=None):
-        if detect is None:
-            detect = CoralDetector().detect
         self._frame_queue = Queue()
 
+        send_notification = send_notification if send_notification else MailNotificationSender().send_notification
         self._notification_worker = NotificationWorker(notify=(DetectionNotifier(send_notification).notify))
+        detect = detect if detect else CoralDetector().detect
+
         self._frame_processor_workers = []
         for a in range(self.FRAME_PROCESSING_THREADS):
             processor_worker = FrameProcessorWorker(self._frame_queue,
                                                     detect=detect,
                                                     register_notification=self._notification_worker.register_notification)
             self._frame_processor_workers.append(processor_worker)
+
         self._frame_reader_worker = FrameReaderWorker(self._frame_queue,
                                                       event_ids=event_ids,
                                                       frame_reader=frame_reader,

@@ -3,7 +3,7 @@ import time
 
 import numpy as np
 
-from events_processor import FSNotificationSender, MainController, FrameReader
+from events_processor import FSNotificationSender, MainController, FrameReader, config
 
 
 class Response:
@@ -23,16 +23,12 @@ class ResourceProducer:
         self.events = [
             self.event_template(event_id=1),
             self.event_template(event_id=1),
-            self.event_template(event_id=1),
-            self.event_template(event_id=1),
             self.event_template(event_id=1, end_time="2020-01-01"),
         ]
         self.event_details = [
             self.frame_template(event_id=1, frames=5),
             self.frame_template(event_id=1, frames=10),
-            self.frame_template(event_id=1, frames=15),
-            self.frame_template(event_id=1, frames=20),
-            self.frame_template(event_id=1, frames=25, end_time="2020-01-01"),
+            self.frame_template(event_id=1, frames=15, end_time="2020-01-01"),
         ]
 
     @staticmethod
@@ -96,7 +92,7 @@ class MockDetector:
         pass
 
     def detect(self, frame_info):
-        time.sleep(0.5)
+        time.sleep(0.1)
         event_id = frame_info.frame_json['EventId']
         frame_id = frame_info.frame_json['FrameId']
         frame_info.detections = self.DETECTIONS.get(event_id, {}).get(frame_id, [])
@@ -109,6 +105,9 @@ def get_image(file_name):
 
 
 def main():
+    del (config['detection_filter']['excluded_polygons1'])
+    config['threading']['thread_watchdog_delay'] = '1'
+    config['timings']['event_loop_seconds'] = '1'
     event_controller = MainController(send_notification=FSNotificationSender().send_notification,
                                       detect=MockDetector().detect,
                                       frame_reader=FrameReader(get_resource=ResourceProducer().get_resource,
