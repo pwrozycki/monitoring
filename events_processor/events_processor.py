@@ -388,6 +388,7 @@ class MailNotificationSender:
     TO_ADDR = config['mail']['to_addr']
     FROM_ADDR = config['mail']['from_addr']
     TIMEOUT = float(config['mail']['timeout'])
+    EVENT_DETAILS_URL = config['zm']['event_details_url']
 
     log = logging.getLogger('events_processor.MailNotificationSender')
 
@@ -410,9 +411,17 @@ class MailNotificationSender:
             s.login(self.USER, self.PASSWORD)
             s.sendmail(self.FROM_ADDR, self.TO_ADDR, msg.as_string())
             s.quit()
-            return True
-        except OSError as e:
+
+            return self.mark_event_as_mailed(event_info)
+        except Exception as e:
             self.log.error(f"Error encountered when sending mail notification: {e}")
+
+    def mark_event_as_mailed(self, event_info):
+        url = self.EVENT_DETAILS_URL.format(eventId=event_info.event_json['Id'])
+        mark_as_mailed_json = {'Event': {'Emailed': '1'}}
+        response = requests.post(url, json=mark_as_mailed_json)
+        response_json = json.loads(response.content)
+        return 200 == response.status_code and 'Saved' == response_json.get('message', '')
 
 
 class DetectionNotifier:
