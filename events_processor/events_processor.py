@@ -111,7 +111,7 @@ class FrameReader:
     def _get_past_events_json(self, page):
         events_fetch_from = datetime.now() - timedelta(seconds=EVENTS_WINDOW_SECONDS)
 
-        query = self.EVENT_LIST_URL.format(startTime=str(events_fetch_from),
+        query = self.EVENT_LIST_URL.format(startTime=datetime.strftime(events_fetch_from, '%Y-%m-%d %H:%M:%S'),
                                            page=page)
         query = query.replace(' ', '%20')
 
@@ -388,7 +388,6 @@ class MailNotificationSender:
     TO_ADDR = config['mail']['to_addr']
     FROM_ADDR = config['mail']['from_addr']
     TIMEOUT = float(config['mail']['timeout'])
-    EVENT_DETAILS_URL = config['zm']['event_details_url']
 
     log = logging.getLogger('events_processor.MailNotificationSender')
 
@@ -412,16 +411,28 @@ class MailNotificationSender:
             s.sendmail(self.FROM_ADDR, self.TO_ADDR, msg.as_string())
             s.quit()
 
-            return self.mark_event_as_mailed(event_info)
+            return EventUpdater.update_event(event_info, Emailed=1)
         except Exception as e:
             self.log.error(f"Error encountered when sending mail notification: {e}")
 
-    def mark_event_as_mailed(self, event_info):
-        url = self.EVENT_DETAILS_URL.format(eventId=event_info.event_json['Id'])
-        mark_as_mailed_json = {'Event': {'Emailed': '1'}}
-        response = requests.post(url, json=mark_as_mailed_json)
-        response_json = json.loads(response.content)
-        return 200 == response.status_code and 'Saved' == response_json.get('message', '')
+
+class EventUpdater:
+    EVENT_DETAILS_URL = config['zm']['event_details_url']
+
+    log = logging.getLogger('events_processor.EventUpdater')
+
+    @classmethod
+    def update_event(cls, event_info, **update_spec):
+        try:
+            url = cls.EVENT_DETAILS_URL.format(eventId=event_info.event_json['Id'])
+            mark_as_mailed_json = {'Event': update_spec}
+            response = requests.post(url, json=mark_as_mailed_json)
+            response_json = json.loads(response.content)
+            return 200 == response.status_code and 'Saved' == response_json.get('message', '')
+        except Exception as e:
+            pass
+
+        cls.log.error(f"Error encountered during event update: {e}")
 
 
 class DetectionNotifier:
@@ -475,8 +486,15 @@ class FrameReaderWorker(Thread):
 
             with event_info.lock:
                 event_info.event_json = event_json
+
+                mailed = event_json['Emailed'] == '1'
+                if mailed:
+                    self.log.debug(f'Skipping processing of event {event_info} as it was already mailed')
+                    continue
+
                 if event_info.all_frames_were_read or event_info.notification_sent:
                     continue
+
                 if not event_info.all_frames_were_read and event_info.event_json['EndTime'] is not None:
                     event_info.all_frames_were_read = True
                     if event_info.planned_notification and not event_info.notification_sent:
