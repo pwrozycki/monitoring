@@ -39,7 +39,14 @@ class ResourceProducer:
                     'Id': event_id,
                     'EndTime': end_time,
                     'MonitorId': '1',
-                    'StartTime': '2019-08-08'
+                    'Emailed': '0',
+                    'StartTime': '2019-08-08',
+                    'Length': '10',
+                    'Frames': '100',
+                    'AlarmFrames': '50',
+                    'TotScore': '702',
+                    'AvgScore': '7',
+                    'MaxScore': '17',
                 }
             }],
             'pagination': {
@@ -54,6 +61,7 @@ class ResourceProducer:
                 'Event': self.event_template(event_id, end_time)['events'][0]['Event'],
                 'Frame': [
                     {
+                        'Id': x,
                         'FrameId': x,
                         'Type': 'Alarm',
                         'EventId': event_id,

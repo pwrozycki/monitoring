@@ -212,7 +212,6 @@ class CoralDetector:
 class DetectionFilter:
     LABEL_FILE = config['detection_filter']['label_file']
     OBJECT_LABELS = config['detection_filter']['object_labels'].split(',')
-    MAX_BOX_AREA_PERCENTAGE = float(config['detection_filter']['max_box_area_percentage'])
 
     log = logging.getLogger('events_processor.DetectionFilter')
 
@@ -224,23 +223,25 @@ class DetectionFilter:
         self._excluded_points = {}
         self._excluded_polygons = {}
         self._min_score = {}
+        self._min_box_area_percentage = {}
+        self._max_box_area_percentage = {}
+
         for (key, value) in config['detection_filter'].items():
-            m = re.match(r'min_score(\d+)', key)
-            if m:
-                monitor_id = m.group(1)
-                self._min_score[monitor_id] = float(value)
+            self._set_config_dict(key, value, 'min_score', self._min_score, float)
+            self._set_config_dict(key, value, 'min_box_area_percentage', self._min_box_area_percentage, float)
+            self._set_config_dict(key, value, 'max_box_area_percentage', self._max_box_area_percentage, float)
+            self._set_config_dict(key, value, 'excluded_points', self._excluded_points,
+                                  lambda x: [geometry.Point(*map(int, m.groups()))
+                                             for m in re.finditer('(\d+),(\d+)', x)])
+            self._set_config_dict(key, value, 'excluded_polygons', self._excluded_polygons,
+                                  lambda x: [geometry.Polygon(self.group(x.group(0)))
+                                             for x in re.finditer('((?:\d+,\d+,?)+)', x)])
 
-            m = re.match(r'excluded_points(\d+)', key)
-            if m:
-                monitor_id = m.group(1)
-                self._excluded_points[monitor_id] = [
-                    geometry.Point(*map(int, m.groups())) for m in re.finditer('(\d+),(\d+)', value)]
-
-            m = re.match(r'excluded_polygons(\d+)', key)
-            if m:
-                monitor_id = m.group(1)
-                self._excluded_polygons[monitor_id] = [
-                    geometry.Polygon(self.group(x.group(0))) for x in re.finditer('((?:\d+,\d+,?)+)', value)]
+    def _set_config_dict(self, key, value, config_key, dictionary, transform):
+        m = re.match(config_key + r'(\d+)', key)
+        if m:
+            monitor_id = m.group(1)
+            dictionary[monitor_id] = transform(value)
 
     def group(self, lst):
         i = iter(int(x) for x in lst.split(','))
@@ -272,7 +273,7 @@ class DetectionFilter:
                 if self._detection_intersects_excluded_polygon(box, frame_info):
                     continue
 
-                if self._detection_area_exceeded(box, frame_info):
+                if self._detection_area_not_in_range(box, frame_info):
                     continue
 
                 result.append(detection)
@@ -280,11 +281,15 @@ class DetectionFilter:
         self.log.debug(f"Frame {frame_info} has {len(result)} accepted detections")
         frame_info.detections = result
 
-    def _detection_area_exceeded(self, box, frame_info):
+    def _detection_area_not_in_range(self, box, frame_info):
+        monitor_id = frame_info.event_info.event_json['MonitorId']
         box_area_percentage = self._detection_area(box) / self._frame_area(frame_info) * 100
-        if box_area_percentage > self.MAX_BOX_AREA_PERCENTAGE:
+        min_box_area_percentage = self._min_box_area_percentage.get(monitor_id, 0)
+        max_box_area_percentage = self._max_box_area_percentage.get(monitor_id, 100)
+        if not min_box_area_percentage <= box_area_percentage <= max_box_area_percentage:
             self.log.debug(
-                f"Detection discarded frame {frame_info}, {box} exceeds area: {box_area_percentage} > {self.MAX_BOX_AREA_PERCENTAGE}%")
+                f"Detection discarded frame {frame_info}, {box} has percentage {box_area_percentage:.2f}% out of range"
+                f" <{min_box_area_percentage:.2f}%, {max_box_area_percentage:.2f}%>")
             return True
         return False
 
@@ -340,7 +345,7 @@ class DetectionRenderer:
             score_percents = 100 * detection.score
 
             self.log.debug(
-                f'Rendering detection: (index: {i}, score: {score_percents:.0f}%, area: {area_percents:.1f}%), box: {box}')
+                f'Rendering detection: (index: {i}, score: {score_percents:.0f}%, area: {area_percents:.2f}%), box: {box}')
 
             self._draw_text(f'{score_percents:.0f}%', box, image)
         return image
@@ -437,7 +442,7 @@ class EventUpdater:
 
 class DetectionNotifier:
     SUBJECT = config['mail']['subject']
-    MESSAGE = config['mail']['message']
+    MESSAGE = re.sub(r'\n\|', '\n', config['mail']['message'])
 
     log = logging.getLogger('events_processor.DetectionNotifier')
 
@@ -445,9 +450,9 @@ class DetectionNotifier:
         self._notification_sender = notification_sender
 
     def notify(self, event_info):
-        mail_dict = dict(event_info.event_json)
-        mail_dict.update(event_info.frame_info.frame_json)
-        mail_dict['Score'] = 100 * event_info.frame_score
+        mail_dict = { f"Event-{x}": y for (x, y) in event_info.event_json.items() }
+        mail_dict.update({ f"Frame-{x}": y for (x, y) in event_info.frame_info.frame_json.items() })
+        mail_dict['Detection-Score'] = 100 * event_info.frame_score
 
         subject = self.SUBJECT.format(**mail_dict)
         message = self.MESSAGE.format(**mail_dict)
