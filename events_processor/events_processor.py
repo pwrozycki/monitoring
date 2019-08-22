@@ -23,8 +23,6 @@ logging.config.fileConfig('events_processor.logging.conf')
 
 # TODO: prozycki: list:
 # - remove intersecting boxes of smaller priority (? - when almost whole rectangle is contained within another rectangle)
-# - send events api POST and update event .mailed to true when mailed, and
-#       when fetching events (possibly) skip mailed events - unless multiple mails per event are foreseen
 
 config = ConfigParser(interpolation=ExtendedInterpolation())
 config.read('events_processor.ini')
