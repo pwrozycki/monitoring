@@ -1,28 +1,24 @@
 import os
+from configparser import ConfigParser, ExtendedInterpolation
 from datetime import datetime
 
 import mysql.connector
 from astral import Astral
 
+config = ConfigParser(interpolation=ExtendedInterpolation())
+config.read('zone_switcher.ini')
+
 ZONE_UPDATES = (
     (
-        """update Zones set MinPixelThreshold = %(threshold)s
-            where Type = 'Active'
-              and MinPixelThreshold != %(threshold)s""",
-        lambda: {'threshold': by_day_or_night(17, 12)}
+        config['thresholds']['query'],
+        lambda: {'threshold': by_day_or_night(config['thresholds']['day_threshold'],
+                                              config['thresholds']['night_threshold'])},
     ),
 )
 
-CONN_SETTINGS = {
-    "host": "localhost",
-    "user": "zmuser",
-    "passwd": "zmpass",
-    "database": "zm"
-}
-
 
 def update_zones():
-    conn = mysql.connector.connect(**CONN_SETTINGS)
+    conn = mysql.connector.connect(**config['db'])
     cursor = conn.cursor()
 
     updated = 0
@@ -45,7 +41,7 @@ def update_zones():
 def sun_info():
     a = Astral()
     a.solar_depression = 'civil'
-    sun = a['Warsaw'].sun(date=datetime.today())
+    sun = a[config['thresholds']['astral_city']].sun(date=datetime.today())
     return (nullify_tz(x) for x in (sun['sunrise'], sun['sunset']))
 
 
