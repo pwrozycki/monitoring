@@ -22,9 +22,8 @@ from shapely import geometry
 logging.config.fileConfig('events_processor.logging.conf')
 
 # TODO: prozycki: list:
+# - fix "test suite" after recent modifications
 # - remove intersecting boxes of smaller priority (? - when almost whole rectangle is contained within another rectangle)
-# - send events api POST and update event .mailed to true when mailed, and
-#       when fetching events (possibly) skip mailed events - unless multiple mails per event are foreseen
 
 config = ConfigParser(interpolation=ExtendedInterpolation())
 config.read('events_processor.ini')
@@ -34,10 +33,11 @@ CACHE_SECONDS_BUFFER = config['timings'].getint('cache_seconds_buffer')
 
 
 class FrameInfo:
-    def __init__(self, frame, image):
+    def __init__(self, frame, image_path):
         self.frame_json = frame
         self.detections = None
-        self.image = image
+        self.image_path = image_path
+        self.image = None
         self.event_info = None
 
     def __str__(self):
@@ -104,9 +104,8 @@ class FrameReader:
 
     log = logging.getLogger("events_processor.FrameReader")
 
-    def __init__(self, get_resource=None, read_image=None):
+    def __init__(self, get_resource=None):
         self._get_resource = get_resource if get_resource else self._get_resource_by_request
-        self._read_image = read_image if read_image else self._read_image_from_fs
 
     def _get_past_events_json(self, page):
         events_fetch_from = datetime.now() - timedelta(seconds=EVENTS_WINDOW_SECONDS)
@@ -157,17 +156,7 @@ class FrameReader:
                 frame_id = frame_json['FrameId']
 
                 file_name = self._get_frame_file_name(event_id, event_json, frame_id)
-                image = self._read_image(file_name)
-
-                if image is not None:
-                    frame_info = FrameInfo(frame_json, image)
-                    yield frame_info
-
-    def _read_image_from_fs(self, file_name):
-        if os.path.isfile(file_name):
-            return cv2.imread(file_name)
-        else:
-            self.log.error(f"File {file_name} does not exist, skipping frame")
+                yield FrameInfo(frame_json, file_name)
 
     def _get_frame_file_name(self, event_id, event_json, frame_id):
         file_name = self.FRAME_FILE_NAME.format(
@@ -450,8 +439,8 @@ class DetectionNotifier:
         self._notification_sender = notification_sender
 
     def notify(self, event_info):
-        mail_dict = { f"Event-{x}": y for (x, y) in event_info.event_json.items() }
-        mail_dict.update({ f"Frame-{x}": y for (x, y) in event_info.frame_info.frame_json.items() })
+        mail_dict = {f"Event-{x}": y for (x, y) in event_info.event_json.items()}
+        mail_dict.update({f"Frame-{x}": y for (x, y) in event_info.frame_info.frame_json.items()})
         mail_dict['Detection-Score'] = 100 * event_info.frame_score
 
         subject = self.SUBJECT.format(**mail_dict)
@@ -492,12 +481,12 @@ class FrameReaderWorker(Thread):
             with event_info.lock:
                 event_info.event_json = event_json
 
+                if event_info.all_frames_were_read or event_info.notification_sent:
+                    continue
+
                 mailed = event_json['Emailed'] == '1'
                 if mailed:
                     self.log.debug(f'Skipping processing of event {event_info} as it was already mailed')
-                    continue
-
-                if event_info.all_frames_were_read or event_info.notification_sent:
                     continue
 
                 if not event_info.all_frames_were_read and event_info.event_json['EndTime'] is not None:
@@ -524,7 +513,7 @@ class FrameProcessorWorker(Thread):
     log = logging.getLogger("events_processor.FrameProcessorWorker")
 
     def __init__(self, frame_queue, detect, register_notification, preprocess_image=None,
-                 filter_detections=None, calculate_score=get_frame_score):
+                 filter_detections=None, calculate_score=get_frame_score, read_image=None):
         super().__init__()
         self._frame_queue = frame_queue
         self._preprocess_image = preprocess_image if preprocess_image else RotatingPreprocessor().preprocess
@@ -532,6 +521,12 @@ class FrameProcessorWorker(Thread):
         self._filter_detections = filter_detections if filter_detections else DetectionFilter().filter_detections
         self._calculate_score = calculate_score
         self._register_notification = register_notification
+
+        self._read_image = read_image if read_image else self._read_image_from_fs
+
+    def _read_image_from_fs(self, file_name):
+        if os.path.isfile(file_name):
+            return cv2.imread(file_name)
 
     def run(self):
         while True:
@@ -542,7 +537,14 @@ class FrameProcessorWorker(Thread):
                     f"Notification already sent for event: {frame_info.event_info}, skipping processing of frame: {frame_info}")
                 continue
 
-            for action in (self._preprocess_image, self._detect, self._filter_detections, self._record_event_frame):
+            frame_info.image = self._read_image(frame_info.image_path)
+            if frame_info.image is None:
+                self.log.error(f"Could not read frame image, skipping frame {frame_info}")
+
+            for action in (self._preprocess_image,
+                           self._detect,
+                           self._filter_detections,
+                           self._record_event_frame):
                 if action:
                     action(frame_info)
 
