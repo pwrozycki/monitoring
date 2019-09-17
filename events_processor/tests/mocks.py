@@ -3,8 +3,6 @@ import time
 
 import numpy as np
 
-from events_processor import FSNotificationSender, MainController, FrameReader, config
-
 
 class Response:
     pass
@@ -17,19 +15,17 @@ class Detection:
         self.score = score
 
 
-class ResourceProducer:
+class Resource:
     def __init__(self):
         self._event_list_invocation = None
-        self.events = [
-            self.event_template(event_id=1),
-            self.event_template(event_id=1),
-            self.event_template(event_id=1, end_time="2020-01-01"),
-        ]
-        self.event_details = [
-            self.frame_template(event_id=1, frames=5),
-            self.frame_template(event_id=1, frames=10),
-            self.frame_template(event_id=1, frames=15, end_time="2020-01-01"),
-        ]
+        self._events = []
+        self._frames = []
+
+    def set_events(self, *events):
+        self._events = events
+
+    def set_frames(self, *frames):
+        self._frames = frames
 
     @staticmethod
     def event_template(event_id, end_time=None):
@@ -55,10 +51,11 @@ class ResourceProducer:
             }
         }
 
-    def frame_template(self, event_id, frames=0, end_time=None):
+    @classmethod
+    def frame_template(cls, event_id, frames=0, end_time=None):
         return {
             'event': {
-                'Event': self.event_template(event_id, end_time)['events'][0]['Event'],
+                'Event': cls.event_template(event_id, end_time)['events'][0]['Event'],
                 'Frame': [
                     {
                         'Id': x,
@@ -79,31 +76,36 @@ class ResourceProducer:
             if self._event_list_invocation is None:
                 self._event_list_invocation = 0
             else:
-                self._event_list_invocation = min(len(self.events) - 1, self._event_list_invocation + 1)
-            content = self.events[self._event_list_invocation]
+                self._event_list_invocation = min(len(self._events) - 1, self._event_list_invocation + 1)
+            content = self._events[self._event_list_invocation]
         elif url.find('/api/events') != -1:
-            content = self.event_details[self._event_list_invocation]
+            content = self._frames[self._event_list_invocation]
 
         response.content = json.dumps(content)
         return response
 
 
-class MockDetector:
-    DETECTIONS = {
-        1: {
-            1: [Detection(score=0.5)],
-            5: [Detection(score=0.9)],
-        }
-    }
-
+class Detector:
     def __init__(self):
-        pass
+        self._detections = {}
+
+    def set_detections(self, detections):
+        self._detections = detections
 
     def detect(self, frame_info):
         time.sleep(0.1)
         event_id = frame_info.frame_json['EventId']
         frame_id = frame_info.frame_json['FrameId']
-        frame_info.detections = self.DETECTIONS.get(event_id, {}).get(frame_id, [])
+        frame_info.detections = self._detections.get(event_id, {}).get(frame_id, [])
+
+
+class Sender:
+    def __init__(self):
+        self.notifications = {}
+
+    def send_notification(self, event_info, subject, message):
+        self.notifications[event_info] = (subject, message)
+        return True
 
 
 def get_image(file_name):
@@ -112,16 +114,5 @@ def get_image(file_name):
     return img
 
 
-def main():
-    del (config['detection_filter']['excluded_polygons1'])
-    config['threading']['thread_watchdog_delay'] = '1'
-    config['timings']['event_loop_seconds'] = '1'
-    event_controller = MainController(send_notification=FSNotificationSender().send_notification,
-                                      detect=MockDetector().detect,
-                                      frame_reader=FrameReader(get_resource=ResourceProducer().get_resource,
-                                                               read_image=get_image))
-    event_controller.run()
-
-
-if __name__ == '__main__':
-    main()
+def sleep(t):
+    time.sleep(t / 20)

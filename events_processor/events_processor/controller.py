@@ -1,0 +1,60 @@
+import logging
+import time
+from queue import Queue
+
+from events_processor import config
+from events_processor.detector import CoralDetector
+from events_processor.notifications import MailNotificationSender, NotificationWorker, DetectionNotifier
+from events_processor.processor import FrameProcessorWorker
+from events_processor.reader import FrameReaderWorker
+
+
+class MainController:
+    FRAME_PROCESSING_THREADS = config['threading'].getint('frame_processing_threads')
+    THREAD_WATCHDOG_DELAY = config['threading'].getint('thread_watchdog_delay')
+
+    log = logging.getLogger("events_processor.EventController")
+
+    def __init__(self,
+                 event_ids=None,
+                 detect=None,
+                 send_notification=None,
+                 frame_reader=None,
+                 read_image=None,
+                 sleep=time.sleep):
+        self._frame_queue = Queue()
+
+        send_notification = send_notification if send_notification else MailNotificationSender().send_notification
+        self._notification_worker = NotificationWorker(notify=(DetectionNotifier(send_notification).notify))
+        detect = detect if detect else CoralDetector().detect
+
+        self._frame_processor_workers = []
+        for a in range(self.FRAME_PROCESSING_THREADS):
+            processor_worker = FrameProcessorWorker(self._frame_queue,
+                                                    detect=detect,
+                                                    register_notification=self._notification_worker.register_notification,
+                                                    read_image=read_image)
+            self._frame_processor_workers.append(processor_worker)
+
+        self._frame_reader_worker = FrameReaderWorker(self._frame_queue,
+                                                      event_ids=event_ids,
+                                                      frame_reader=frame_reader,
+                                                      reshedule_notification=self._notification_worker.reshedule_notification,
+                                                      sleep=sleep)
+
+    def start(self, watchdog=True):
+        self._threads = self._frame_processor_workers + [self._frame_reader_worker, self._notification_worker]
+        for thread in self._threads:
+            thread.daemon = True
+            thread.start()
+
+        if watchdog:
+            self._exit_when_any_thread_terminates()
+
+    def stop(self):
+        for thread in self._threads:
+            thread.stop()
+
+    def _exit_when_any_thread_terminates(self):
+        while all(t.is_alive() for t in self._threads):
+            time.sleep(self.THREAD_WATCHDOG_DELAY)
