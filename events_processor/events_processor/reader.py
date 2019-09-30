@@ -99,7 +99,8 @@ class FrameReaderWorker(Thread):
 
     log = logging.getLogger("events_processor.FrameReaderWorker")
 
-    def __init__(self, frame_queue, event_ids=None, frame_reader=None, reshedule_notification=None, sleep=time.sleep):
+    def __init__(self, frame_queue, event_ids=None, skip_mailed=None,
+                 frame_reader=None, reschedule_notification=None, sleep=time.sleep):
         super().__init__()
         self._stop = False
         self._sleep = sleep
@@ -108,12 +109,13 @@ class FrameReaderWorker(Thread):
         self._events_cache = TTLCache(maxsize=10000000, ttl=EVENTS_WINDOW_SECONDS + CACHE_SECONDS_BUFFER)
         self._frames_cache = TTLCache(maxsize=10000000, ttl=EVENTS_WINDOW_SECONDS + CACHE_SECONDS_BUFFER)
 
-        self._reshedule_notification = reshedule_notification
+        self._reschedule_notification = reschedule_notification
         self._frame_reader = frame_reader if frame_reader else FrameReader()
         if event_ids:
             self._events_iter = lambda: self._frame_reader.events_by_id_iter(event_ids)
         else:
             self._events_iter = self._frame_reader.events_iter
+        self._skip_mailed = skip_mailed
 
     def run(self):
         while not self._stop:
@@ -140,14 +142,14 @@ class FrameReaderWorker(Thread):
                     continue
 
                 mailed = event_json['Emailed'] == '1'
-                if mailed:
+                if mailed and self._skip_mailed:
                     self.log.debug(f'Skipping processing of event {event_info} as it was already mailed')
                     continue
 
                 if not event_info.all_frames_were_read and event_info.event_json['EndTime'] is not None:
                     event_info.all_frames_were_read = True
                     if event_info.planned_notification and not event_info.notification_sent:
-                        self._reshedule_notification(event_info)
+                        self._reschedule_notification(event_info)
 
             self.log.info(f"Reading event {event_info}")
 

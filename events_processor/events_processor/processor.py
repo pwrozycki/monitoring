@@ -19,18 +19,20 @@ def get_frame_score(frame_info):
 class FrameProcessorWorker(Thread):
     log = logging.getLogger("events_processor.FrameProcessorWorker")
 
-    def __init__(self, frame_queue, detect, register_notification, preprocess_image=None,
-                 filter_detections=None, calculate_score=get_frame_score, read_image=None):
+    def __init__(self, frame_queue, detect, register_notification,
+                 retrieve_alarm_stats=None, retrieve_zones=None, calculate_score=get_frame_score, read_image=None):
         super().__init__()
         self._stop = False
 
         self._frame_queue = frame_queue
-        self._preprocess_image = preprocess_image if preprocess_image else RotatingPreprocessor().preprocess
+        self._preprocessor = RotatingPreprocessor()
         self._detect = detect
-        self._filter_detections = filter_detections if filter_detections else DetectionFilter().filter_detections
+        self._filter_detections = DetectionFilter(transform_coords=self._preprocessor.transform_coords,
+                                                  retrieve_alarm_stats=retrieve_alarm_stats,
+                                                  retrieve_zones=retrieve_zones
+                                                  ).filter_detections
         self._calculate_score = calculate_score
         self._register_notification = register_notification
-
         self._read_image = read_image if read_image else self._read_image_from_fs
 
     def _read_image_from_fs(self, file_name):
@@ -52,7 +54,7 @@ class FrameProcessorWorker(Thread):
             if frame_info.image is None:
                 self.log.error(f"Could not read frame image, skipping frame {frame_info}")
 
-            for action in (self._preprocess_image,
+            for action in (self._preprocessor.preprocess,
                            self._detect,
                            self._filter_detections,
                            self._record_event_frame):

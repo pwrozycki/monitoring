@@ -1,6 +1,6 @@
 import unittest
 
-from tests.basic import DetectionTestCase
+from tests.detection import DetectionTestCase
 
 if __name__ == '__main__':
     suite = unittest.TestSuite()

@@ -1,7 +1,12 @@
+import copy
 import json
 import time
 
 import numpy as np
+
+import events_processor
+from events_processor.controller import MainController
+from events_processor.reader import FrameReader
 
 
 class Response:
@@ -15,26 +20,15 @@ class Detection:
         self.score = score
 
 
-class Resource:
-    def __init__(self):
-        self._event_list_invocation = None
-        self._events = []
-        self._frames = []
-
-    def set_events(self, *events):
-        self._events = events
-
-    def set_frames(self, *frames):
-        self._frames = frames
-
+class ResourceTemplate:
     @staticmethod
-    def event_template(event_id, end_time=None):
+    def event_template(event_id=1, end_time="2020-01-01", monitor_id='1'):
         return {
             'events': [{
                 'Event': {
                     'Id': event_id,
                     'EndTime': end_time,
-                    'MonitorId': '1',
+                    'MonitorId': monitor_id,
                     'Emailed': '0',
                     'StartTime': '2019-08-08',
                     'Length': '10',
@@ -43,6 +37,8 @@ class Resource:
                     'TotScore': '702',
                     'AvgScore': '7',
                     'MaxScore': '17',
+                    'Width': '1000',
+                    'Height': '1000'
                 }
             }],
             'pagination': {
@@ -52,7 +48,7 @@ class Resource:
         }
 
     @classmethod
-    def frame_template(cls, event_id, frames=0, end_time=None):
+    def frame_template(cls, event_id=1, frames=0, end_time=None):
         return {
             'event': {
                 'Event': cls.event_template(event_id, end_time)['events'][0]['Event'],
@@ -66,6 +62,13 @@ class Resource:
                 ]
             }
         }
+
+
+class ResourceProducer:
+    def __init__(self, events=(), frames=()):
+        self._event_list_invocation = None
+        self._events = events
+        self._frames = frames
 
     def get_resource(self, url):
         response = Response()
@@ -86,14 +89,10 @@ class Resource:
 
 
 class Detector:
-    def __init__(self):
-        self._detections = {}
-
-    def set_detections(self, detections):
+    def __init__(self, detections={}):
         self._detections = detections
 
     def detect(self, frame_info):
-        time.sleep(0.1)
         event_id = frame_info.frame_json['EventId']
         frame_id = frame_info.frame_json['FrameId']
         frame_info.detections = self._detections.get(event_id, {}).get(frame_id, [])
@@ -104,7 +103,8 @@ class Sender:
         self.notifications = {}
 
     def send_notification(self, event_info, subject, message):
-        self.notifications[event_info] = (subject, message)
+        self.notifications[copy.copy(event_info)] = (subject, message)
+        print(f"Sending notification with score {event_info.frame_score}")
         return True
 
 
@@ -115,4 +115,42 @@ def get_image(file_name):
 
 
 def sleep(t):
-    time.sleep(t / 20)
+    time.sleep(t / 50)
+
+
+def reset_config():
+    for section in events_processor.config.sections():
+        events_processor.config.remove_section(section)
+    events_processor.read_config()
+
+
+def run_pipeline(detections=None,
+                 score=0.8,
+                 events=(ResourceTemplate.event_template(),),
+                 frames=(ResourceTemplate.frame_template(frames=1),),
+                 wait_time=0.2,
+                 config_updates={},
+                 retrieve_alarm_stats=lambda *a: [],
+                 retrieve_zones=lambda *a: []):
+    reset_config()
+    events_processor.config.update(config_updates)
+
+    res = ResourceProducer(events=events, frames=frames)
+    detections = detections if detections else {0: [Detection(score=score, bounding_box=np.array([1, 1, 50, 50]))]}
+    detector = Detector({1: detections})
+    sender = Sender()
+
+    controller = MainController(send_notification=sender.send_notification,
+                                detect=detector.detect,
+                                frame_reader=FrameReader(get_resource=res.get_resource),
+                                read_image=get_image,
+                                retrieve_alarm_stats=retrieve_alarm_stats,
+                                retrieve_zones=retrieve_zones,
+                                sleep=sleep)
+
+    controller.start(watchdog=False)
+    time.sleep(wait_time)
+    controller.stop()
+    time.sleep(0.2)
+
+    return list(sender.notifications.keys())

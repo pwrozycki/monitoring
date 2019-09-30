@@ -131,7 +131,7 @@ class NotificationWorker(Thread):
             self._notifications.add(event_info)
             self._condition.notify_all()
 
-    def reshedule_notification(self, event_info):
+    def reschedule_notification(self, event_info):
         with self._condition:
             self._calculate_notification_time(event_info)
             self._condition.notify_all()

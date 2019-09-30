@@ -22,20 +22,29 @@ class RotatingPreprocessor:
         if rotation != 0:
             frame_info.image = self.rotate_and_expand_image(frame_info.image, rotation)
 
-    @staticmethod
-    def rotate_and_expand_image(mat, angle):
+    @classmethod
+    def rotate_and_expand_image(cls, mat, angle):
         h, w = mat.shape[:2]
-        image_center = (w / 2, h / 2)
-        rotation_mat = cv2.getRotationMatrix2D(image_center, angle, 1.)
-
-        abs_cos = abs(rotation_mat[0, 0])
-        abs_sin = abs(rotation_mat[0, 1])
-
-        bound_w = int(h * abs_sin + w * abs_cos)
-        bound_h = int(h * abs_cos + w * abs_sin)
-
-        rotation_mat[0, 2] += bound_w / 2 - image_center[0]
-        rotation_mat[1, 2] += bound_h / 2 - image_center[1]
+        bound_h, bound_w, rotation_mat = cls._get_rotation_matrix(angle, w, h)
 
         return cv2.UMat.get(
             cv2.warpAffine(cv2.UMat(mat), rotation_mat, (bound_w, bound_h), flags=cv2.INTER_CUBIC))
+
+    def transform_coords(self, monitor_id, w, h, point):
+        angle = int(self._rotations.get(monitor_id, '0'))
+        if angle == 0:
+            return point
+        rotation_matrix = self._get_rotation_matrix(angle, w, h)[2]
+        return rotation_matrix.dot((*point, 1))
+
+    @staticmethod
+    def _get_rotation_matrix(angle, w, h):
+        image_center = (w / 2, h / 2)
+        rotation_mat = cv2.getRotationMatrix2D(image_center, angle, 1.)
+        abs_cos = abs(rotation_mat[0, 0])
+        abs_sin = abs(rotation_mat[0, 1])
+        bound_w = int(h * abs_sin + w * abs_cos)
+        bound_h = int(h * abs_cos + w * abs_sin)
+        rotation_mat[0, 2] += bound_w / 2 - image_center[0]
+        rotation_mat[1, 2] += bound_h / 2 - image_center[1]
+        return bound_h, bound_w, rotation_mat

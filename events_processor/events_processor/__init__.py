@@ -7,4 +7,11 @@ from configparser import ConfigParser, ExtendedInterpolation
 # - remove intersecting boxes of smaller priority (? - when almost whole rectangle is contained within another rectangle)
 
 config = ConfigParser(interpolation=ExtendedInterpolation())
-config.read('events_processor.ini')
+
+
+def read_config():
+    global config
+    config.read('events_processor.ini')
+
+
+read_config()
