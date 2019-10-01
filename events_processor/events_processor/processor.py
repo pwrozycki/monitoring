@@ -19,12 +19,13 @@ def get_frame_score(frame_info):
 class FrameProcessorWorker(Thread):
     log = logging.getLogger("events_processor.FrameProcessorWorker")
 
-    def __init__(self, frame_queue, detect, register_notification,
+    def __init__(self, frame_queue, detect, notification_queue,
                  retrieve_alarm_stats=None, retrieve_zones=None, calculate_score=get_frame_score, read_image=None):
         super().__init__()
         self._stop = False
 
         self._frame_queue = frame_queue
+        self._notification_queue = notification_queue
         self._preprocessor = RotatingPreprocessor()
         self._detect = detect
         self._filter_detections = DetectionFilter(transform_coords=self._preprocessor.transform_coords,
@@ -32,7 +33,6 @@ class FrameProcessorWorker(Thread):
                                                   retrieve_zones=retrieve_zones
                                                   ).filter_detections
         self._calculate_score = calculate_score
-        self._register_notification = register_notification
         self._read_image = read_image if read_image else self._read_image_from_fs
 
     def _read_image_from_fs(self, file_name):
@@ -42,8 +42,8 @@ class FrameProcessorWorker(Thread):
     def run(self):
         while not self._stop:
             frame_info = self._frame_queue.get()
-            if not frame_info:
-                continue
+            if self._stop:
+                break
 
             if frame_info.event_info.notification_sent:
                 self.log.info(
@@ -79,4 +79,4 @@ class FrameProcessorWorker(Thread):
 
                 if event_info.first_detection_time is None:
                     event_info.first_detection_time = time.monotonic()
-                self._register_notification(event_info)
+                self._notification_queue.put(event_info)

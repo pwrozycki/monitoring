@@ -24,28 +24,29 @@ class MainController:
                  retrieve_alarm_stats=None,
                  retrieve_zones=None,
                  sleep=time.sleep):
-        self._frame_queue = Queue()
+        frame_queue = Queue()
+        notification_queue = Queue()
         self._threads = []
 
         send_notification = send_notification if send_notification else MailNotificationSender().send_notification
-        self._notification_worker = NotificationWorker(notify=DetectionNotifier(send_notification).notify)
+        self._notification_worker = NotificationWorker(notify=DetectionNotifier(send_notification).notify,
+                                                       notification_queue=notification_queue)
 
         self._frame_processor_workers = []
         detect = detect if detect else CoralDetector().detect
         for a in range(self.FRAME_PROCESSING_THREADS):
-            processor_worker = FrameProcessorWorker(self._frame_queue,
+            processor_worker = FrameProcessorWorker(frame_queue=frame_queue,
                                                     detect=detect,
-                                                    register_notification=self._notification_worker.register_notification,
+                                                    notification_queue=notification_queue,
                                                     read_image=read_image,
                                                     retrieve_alarm_stats=retrieve_alarm_stats,
                                                     retrieve_zones=retrieve_zones)
             self._frame_processor_workers.append(processor_worker)
 
-        self._frame_reader_worker = FrameReaderWorker(self._frame_queue,
+        self._frame_reader_worker = FrameReaderWorker(frame_queue=frame_queue,
                                                       event_ids=event_ids,
                                                       skip_mailed=not event_ids,
                                                       frame_reader=frame_reader,
-                                                      reschedule_notification=self._notification_worker.reschedule_notification,
                                                       sleep=sleep)
 
     def start(self, watchdog=True):

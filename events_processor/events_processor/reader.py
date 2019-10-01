@@ -100,7 +100,7 @@ class FrameReaderWorker(Thread):
     log = logging.getLogger("events_processor.FrameReaderWorker")
 
     def __init__(self, frame_queue, event_ids=None, skip_mailed=None,
-                 frame_reader=None, reschedule_notification=None, sleep=time.sleep):
+                 frame_reader=None, sleep=time.sleep):
         super().__init__()
         self._stop = False
         self._sleep = sleep
@@ -109,7 +109,6 @@ class FrameReaderWorker(Thread):
         self._events_cache = TTLCache(maxsize=10000000, ttl=EVENTS_WINDOW_SECONDS + CACHE_SECONDS_BUFFER)
         self._frames_cache = TTLCache(maxsize=10000000, ttl=EVENTS_WINDOW_SECONDS + CACHE_SECONDS_BUFFER)
 
-        self._reschedule_notification = reschedule_notification
         self._frame_reader = frame_reader if frame_reader else FrameReader()
         if event_ids:
             self._events_iter = lambda: self._frame_reader.events_by_id_iter(event_ids)
@@ -148,8 +147,6 @@ class FrameReaderWorker(Thread):
 
                 if not event_info.all_frames_were_read and event_info.event_json['EndTime'] is not None:
                     event_info.all_frames_were_read = True
-                    if event_info.planned_notification and not event_info.notification_sent:
-                        self._reschedule_notification(event_info)
 
             self.log.info(f"Reading event {event_info}")
 

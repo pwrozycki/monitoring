@@ -128,6 +128,7 @@ class DetectionFilter:
                 movement_ratio = movement_box.area / intersection_box.area
                 details = f"movement_ratio: {movement_ratio:.2f}, detection_box: {detection_box.area:.2f}, " \
                           f"movement_box: {movement_box.area:.2f}, intersection_box: {intersection_box.area:.2f}"
+
                 if detection.score >= self._get_config(self._coarse_movement_min_score, monitor_id, 0):
                     self.log.debug(f"Detection accepted for frame {frame_info} - coarse movement - {details}")
                     return False
@@ -187,7 +188,6 @@ class DetectionFilter:
         polygons = self._excluded_zone_polygons.get(monitor_id, [])
         if polygons:
             for poly in polygons:
-                print(poly)
                 if detection_box.intersects(poly.polygon):
                     self.log.debug(
                         f"Detection discarded frame {frame_info}, {box} intersects excluded polygon: {poly.name}")
@@ -209,7 +209,7 @@ class DetectionFilter:
 
     def _detection_area(self, box):
         (x1, y1, x2, y2) = box
-        area = (x2 - x1) * (y2 - y1)
+        area = abs((x2 - x1) * (y2 - y1))
         return area
 
     def _frame_area(self, frame_info):
