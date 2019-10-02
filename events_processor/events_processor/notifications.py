@@ -6,7 +6,8 @@ import time
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from threading import Thread, Condition
+from queue import Empty
+from threading import Thread
 
 import cv2
 import requests
@@ -110,7 +111,7 @@ class NotificationWorker(Thread):
 
     log = logging.getLogger("events_processor.NotificationWorker")
 
-    def __init__(self, notify, annotate_image=None, sleep=time.sleep):
+    def __init__(self, notify, notification_queue, annotate_image=None, sleep=time.sleep):
         super().__init__()
         self._stop = False
         self._sleep = sleep
@@ -118,64 +119,57 @@ class NotificationWorker(Thread):
         self._notify = notify
         self._annotate_image = annotate_image if annotate_image else DetectionRenderer().annotate_image
 
+        self._notification_queue = notification_queue
         self._notifications = set()
-        self._condition = Condition()
-
-    def register_notification(self, event_info: EventInfo):
-        if event_info.notification_sent:
-            return
-
-        self.log.info(f"Registering event notification {event_info.frame_info}, score: {event_info.frame_score}")
-        self._calculate_notification_time(event_info)
-        with self._condition:
-            self._notifications.add(event_info)
-            self._condition.notify_all()
-
-    def reschedule_notification(self, event_info):
-        with self._condition:
-            self._calculate_notification_time(event_info)
-            self._condition.notify_all()
 
     def _calculate_notification_time(self, event_info):
-        if not event_info.all_frames_were_read:
-            delay = event_info.first_detection_time + self.NOTIFICATION_DELAY_SECONDS - time.monotonic()
-            notification_delay = max(delay, 0)
-        else:
-            notification_delay = 0
-        event_info.planned_notification = time.monotonic() + notification_delay
+        with event_info.lock:
+            if not event_info.all_frames_were_read:
+                delay = event_info.first_detection_time + self.NOTIFICATION_DELAY_SECONDS - time.monotonic()
+                notification_delay = max(delay, 0)
+            else:
+                notification_delay = 0
+            event_info.planned_notification = time.monotonic() + notification_delay
 
     def run(self, a=None):
         while not self._stop:
-            with self._condition:
-                event_info = self._get_closest_notification_event()
-                if event_info:
-                    timeout = event_info.planned_notification - time.monotonic()
-                else:
-                    timeout = None
-
-                if timeout is None or timeout > 0:
-                    self._condition.wait(timeout)
-                    continue
-
-            self._annotate_image(event_info.frame_info)
-            notification_succeeded = self._notify(event_info)
-            if notification_succeeded:
-                with event_info.lock:
-                    event_info.notification_sent = True
-                    event_info.frame_info = None
-
-                with self._condition:
-                    self._notifications.remove(event_info)
+            upcoming_notification = self._get_closest_notification_event()
+            if upcoming_notification:
+                timeout = max(upcoming_notification.planned_notification - time.monotonic(), 0)
             else:
-                self.log.error("Notification error, throttling")
-                self._sleep(5)
+                timeout = None
+
+            try:
+                new_notification = self._notification_queue.get(timeout=timeout)
+                if self._stop:
+                    break
+
+                self._calculate_notification_time(new_notification)
+                self._notifications.add(new_notification)
+                continue
+            except Empty:
+                pass
+
+            self._send_notification(upcoming_notification)
 
         self.log.info("Terminating")
 
+    def _send_notification(self, upcoming_notification):
+        self._annotate_image(upcoming_notification.frame_info)
+        notification_succeeded = self._notify(upcoming_notification)
+        if notification_succeeded:
+            with upcoming_notification.lock:
+                upcoming_notification.notification_sent = True
+                upcoming_notification.frame_info = None
+
+            self._notifications.remove(upcoming_notification)
+        else:
+            self.log.error("Notification error, throttling")
+            self._sleep(5)
+
     def stop(self):
         self._stop = True
-        with self._condition:
-            self._condition.notify_all()
+        self._notification_queue.put(None)
 
     def _get_closest_notification_event(self) -> EventInfo:
         event_info = None
