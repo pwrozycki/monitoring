@@ -22,7 +22,7 @@ class FrameProcessorWorker(Thread):
     def __init__(self, frame_queue, detect, notification_queue,
                  retrieve_alarm_stats=None, retrieve_zones=None, calculate_score=get_frame_score, read_image=None):
         super().__init__()
-        self._stop = False
+        self._stop_requested = False
 
         self._frame_queue = frame_queue
         self._notification_queue = notification_queue
@@ -40,9 +40,9 @@ class FrameProcessorWorker(Thread):
             return cv2.imread(file_name)
 
     def run(self):
-        while not self._stop:
+        while not self._stop_requested:
             frame_info = self._frame_queue.get()
-            if self._stop:
+            if self._stop_requested:
                 break
 
             if frame_info.event_info.notification_sent:
@@ -64,7 +64,7 @@ class FrameProcessorWorker(Thread):
         self.log.info(f"Terminating")
 
     def stop(self):
-        self._stop = True
+        self._stop_requested = True
         self._frame_queue.put(None)
 
     def _record_event_frame(self, frame_info=None):
