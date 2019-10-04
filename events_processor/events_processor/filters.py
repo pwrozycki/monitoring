@@ -18,7 +18,7 @@ class DetectionFilter:
     def __init__(self, transform_coords, retrieve_alarm_stats=None, retrieve_zones=None):
         self._labels = self._read_labels()
         self._transform_coords = transform_coords
-        self._retrieve_alarm_box = retrieve_alarm_stats if retrieve_alarm_stats else dataaccess.retrieve_alarm_stats
+        self._retrieve_alarm_stats = retrieve_alarm_stats if retrieve_alarm_stats else dataaccess.retrieve_alarm_stats
         self._retrieve_zones = retrieve_zones if retrieve_zones else dataaccess.retrieve_zones
         self._config_parse()
 
@@ -44,7 +44,7 @@ class DetectionFilter:
             self._set_config(key, value, 'excluded_points', self._excluded_points, self._coords_to_points)
             self._set_config(key, value, 'excluded_polygons', self._excluded_polygons, self._coords_to_polygons)
 
-        for (m_id, w, h, name, coords) in self._retrieve_zones("excl_"):
+        for (m_id, w, h, name, coords) in self._retrieve_zones():
             def transform(x, y):
                 return self._transform_coords(m_id, w, h, (x, y))
 
@@ -119,8 +119,8 @@ class DetectionFilter:
         if detection.score >= self._get_config(self._movement_indifferent_min_score, monitor_id, 0):
             return False
 
-        alarm_box = self._retrieve_alarm_box(frame_info.frame_json['EventId'],
-                                             frame_info.frame_json['FrameId'])
+        alarm_box = self._retrieve_alarm_stats(frame_info.frame_json['EventId'],
+                                               frame_info.frame_json['FrameId'])
         if alarm_box:
             (detection_box, movement_box, intersection_box) = self._calculate_boxes(alarm_box, detection, frame_info)
 

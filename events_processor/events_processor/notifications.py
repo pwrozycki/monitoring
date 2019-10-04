@@ -113,7 +113,7 @@ class NotificationWorker(Thread):
 
     def __init__(self, notify, notification_queue, annotate_image=None, sleep=time.sleep):
         super().__init__()
-        self._stop = False
+        self._stop_requested = False
         self._sleep = sleep
 
         self._notify = notify
@@ -124,15 +124,12 @@ class NotificationWorker(Thread):
 
     def _calculate_notification_time(self, event_info):
         with event_info.lock:
-            if not event_info.all_frames_were_read:
-                delay = event_info.first_detection_time + self.NOTIFICATION_DELAY_SECONDS - time.monotonic()
-                notification_delay = max(delay, 0)
-            else:
-                notification_delay = 0
+            delay = event_info.first_detection_time + self.NOTIFICATION_DELAY_SECONDS - time.monotonic()
+            notification_delay = max(delay, 0)
             event_info.planned_notification = time.monotonic() + notification_delay
 
     def run(self, a=None):
-        while not self._stop:
+        while not self._stop_requested:
             upcoming_notification = self._get_closest_notification_event()
             if upcoming_notification:
                 timeout = max(upcoming_notification.planned_notification - time.monotonic(), 0)
@@ -141,7 +138,7 @@ class NotificationWorker(Thread):
 
             try:
                 new_notification = self._notification_queue.get(timeout=timeout)
-                if self._stop:
+                if self._stop_requested:
                     break
 
                 self._calculate_notification_time(new_notification)
@@ -154,21 +151,21 @@ class NotificationWorker(Thread):
 
         self.log.info("Terminating")
 
-    def _send_notification(self, upcoming_notification):
-        self._annotate_image(upcoming_notification.frame_info)
-        notification_succeeded = self._notify(upcoming_notification)
+    def _send_notification(self, event_info):
+        self._annotate_image(event_info.frame_info)
+        notification_succeeded = self._notify(event_info)
         if notification_succeeded:
-            with upcoming_notification.lock:
-                upcoming_notification.notification_sent = True
-                upcoming_notification.frame_info = None
+            with event_info.lock:
+                event_info.notification_sent = True
+                event_info.frame_info = None
 
-            self._notifications.remove(upcoming_notification)
+            self._notifications.remove(event_info)
         else:
             self.log.error("Notification error, throttling")
             self._sleep(5)
 
     def stop(self):
-        self._stop = True
+        self._stop_requested = True
         self._notification_queue.put(None)
 
     def _get_closest_notification_event(self) -> EventInfo:

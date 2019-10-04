@@ -22,7 +22,7 @@ class Detection:
 
 class ResourceTemplate:
     @staticmethod
-    def event_template(event_id=1, end_time="2020-01-01", monitor_id='1'):
+    def event_template(event_id=1, end_time='2019-08-09', monitor_id='1'):
         return {
             'events': [{
                 'Event': {
@@ -57,6 +57,7 @@ class ResourceTemplate:
                         'Id': x,
                         'FrameId': x,
                         'Type': 'Alarm',
+                        'TimeStamp': '2019-08-08 10:00:00',
                         'EventId': event_id,
                     } for x in range(frames)
                 ]

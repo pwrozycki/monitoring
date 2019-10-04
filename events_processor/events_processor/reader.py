@@ -96,13 +96,14 @@ class FrameReader:
 
 class FrameReaderWorker(Thread):
     EVENT_LOOP_SECONDS = config['timings'].getint('event_loop_seconds')
+    FRAME_READ_DELAY_SECONDS = config['timings'].getint('frame_read_delay_seconds')
 
     log = logging.getLogger("events_processor.FrameReaderWorker")
 
     def __init__(self, frame_queue, event_ids=None, skip_mailed=None,
                  frame_reader=None, sleep=time.sleep):
         super().__init__()
-        self._stop = False
+        self._stop_requested = False
         self._sleep = sleep
 
         self._frame_queue = frame_queue
@@ -117,7 +118,7 @@ class FrameReaderWorker(Thread):
         self._skip_mailed = skip_mailed
 
     def run(self):
-        while not self._stop:
+        while not self._stop_requested:
             before = time.monotonic()
             self._collect_events()
             time_spent = (time.monotonic() - before)
@@ -126,32 +127,33 @@ class FrameReaderWorker(Thread):
         self.log.info("Terminating")
 
     def stop(self):
-        self._stop = True
+        self._stop_requested = True
 
     def _collect_events(self):
         self.log.info("Fetching event list")
         for event_json in self._events_iter():
             event_id = event_json['Id']
             event_info = self._events_cache.setdefault(event_id, EventInfo())
+            event_info.event_json = event_json
 
-            with event_info.lock:
-                event_info.event_json = event_json
+            if event_info.all_frames_were_read or event_info.notification_sent:
+                continue
 
-                if event_info.all_frames_were_read or event_info.notification_sent:
-                    continue
-
-                mailed = event_json['Emailed'] == '1'
-                if mailed and self._skip_mailed:
-                    self.log.debug(f'Skipping processing of event {event_info} as it was already mailed')
-                    continue
-
-                if not event_info.all_frames_were_read and event_info.event_json['EndTime'] is not None:
-                    event_info.all_frames_were_read = True
+            mailed = event_json['Emailed'] == '1'
+            if mailed and self._skip_mailed:
+                self.log.debug(f'Skipping processing of event {event_info} as it was already mailed')
+                continue
 
             self.log.info(f"Reading event {event_info}")
 
+            frame_skipped = False
             for frame_info in self._frame_reader.frames_iter(event_ids=(event_id,)):
                 if frame_info.frame_json['Type'] != 'Alarm':
+                    continue
+
+                frame_time = datetime.strptime(frame_info.frame_json['TimeStamp'], '%Y-%m-%d %H:%M:%S')
+                if datetime.now() - frame_time < timedelta(seconds=self.FRAME_READ_DELAY_SECONDS):
+                    frame_skipped = True
                     continue
 
                 key = '{EventId}_{FrameId}'.format(**frame_info.frame_json)
@@ -161,3 +163,6 @@ class FrameReaderWorker(Thread):
 
                 frame_info.event_info = event_info
                 self._frame_queue.put(frame_info)
+
+            if not frame_skipped and event_info.event_json['EndTime'] is not None:
+                event_info.all_frames_were_read = True
