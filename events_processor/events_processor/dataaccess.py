@@ -13,14 +13,21 @@ def _db_config(int_keywords=('pool_size',)):
     return db_config
 
 
-connection_pool = mysql.connector.pooling.MySQLConnectionPool(**_db_config())
+_connection_pool = None
 EXCLUDED_ZONE_PREFIX = config['detection_filter']['excluded_zone_prefix']
+
+
+def _get_pool():
+    global _connection_pool
+    if not _connection_pool:
+        _connection_pool = mysql.connector.pooling.MySQLConnectionPool(**_db_config())
+    return _connection_pool
 
 
 def invoke_query(query):
     conn = cursor = None
     try:
-        conn = connection_pool.get_connection()
+        conn = _get_pool().get_connection()
 
         if conn.is_connected():
             cursor = conn.cursor()
@@ -31,7 +38,7 @@ def invoke_query(query):
         if conn and conn.is_connected():
             if cursor:
                 cursor.close()
-        conn.close()
+            conn.close()
 
 
 def retrieve_alarm_stats(event_id, frame_id):

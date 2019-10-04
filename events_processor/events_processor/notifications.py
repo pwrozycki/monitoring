@@ -122,7 +122,7 @@ class NotificationWorker(Thread):
         self._notification_queue = notification_queue
         self._notifications = set()
 
-    def _calculate_notification_time(self, event_info):
+    def _set_notification_time(self, event_info):
         with event_info.lock:
             delay = event_info.first_detection_time + self.NOTIFICATION_DELAY_SECONDS - time.monotonic()
             notification_delay = max(delay, 0)
@@ -130,36 +130,33 @@ class NotificationWorker(Thread):
 
     def run(self, a=None):
         while not self._stop_requested:
-            upcoming_notification = self._get_closest_notification_event()
-            if upcoming_notification:
-                timeout = max(upcoming_notification.planned_notification - time.monotonic(), 0)
+            notification = self._get_closest_notification_event()
+            seconds_to_notification = self._get_notification_remaining_secs(notification)
+
+            if seconds_to_notification == 0:
+                self._send_notification(notification)
             else:
-                timeout = None
+                try:
+                    incoming_notification = self._notification_queue.get(timeout=seconds_to_notification)
+                    if self._stop_requested:
+                        break
 
-            try:
-                new_notification = self._notification_queue.get(timeout=timeout)
-                if self._stop_requested:
-                    break
-
-                self._calculate_notification_time(new_notification)
-                self._notifications.add(new_notification)
-                continue
-            except Empty:
-                pass
-
-            self._send_notification(upcoming_notification)
+                    self._set_notification_time(incoming_notification)
+                    self._notifications.add(incoming_notification)
+                except Empty:
+                    pass
 
         self.log.info("Terminating")
 
-    def _send_notification(self, event_info):
-        self._annotate_image(event_info.frame_info)
-        notification_succeeded = self._notify(event_info)
+    def _send_notification(self, upcoming_notification):
+        self._annotate_image(upcoming_notification.frame_info)
+        notification_succeeded = self._notify(upcoming_notification)
         if notification_succeeded:
-            with event_info.lock:
-                event_info.notification_sent = True
-                event_info.frame_info = None
+            with upcoming_notification.lock:
+                upcoming_notification.notification_sent = True
+                upcoming_notification.frame_info = None
 
-            self._notifications.remove(event_info)
+            self._notifications.remove(upcoming_notification)
         else:
             self.log.error("Notification error, throttling")
             self._sleep(5)
@@ -169,8 +166,14 @@ class NotificationWorker(Thread):
         self._notification_queue.put(None)
 
     def _get_closest_notification_event(self) -> EventInfo:
-        event_info = None
-        for notification in self._notifications:
-            if event_info is None or event_info.planned_notification < event_info.planned_notification:
-                event_info = notification
-        return event_info
+        if self._notifications:
+            return min(self._notifications, key=lambda x: x.planned_notification)
+
+        return None
+
+    def _get_notification_remaining_secs(self, notification):
+        if notification:
+            seconds_to_notification = max(notification.planned_notification - time.monotonic(), 0)
+        else:
+            seconds_to_notification = None
+        return seconds_to_notification

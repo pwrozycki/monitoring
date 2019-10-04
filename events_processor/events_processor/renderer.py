@@ -18,8 +18,8 @@ class DetectionRenderer:
             area_percents = 100 * self._box_area(point1, point2) / self._box_area((0, 0), frame_info.image.shape[:2])
             score_percents = 100 * detection.score
 
-            self.log.debug(
-                f'Rendering detection: (index: {i}, score: {score_percents:.0f}%, area: {area_percents:.2f}%), box: {box}')
+            self.log.debug(f'Rendering detection: {frame_info.event_info} (index: {i}, '
+                           f'score: {score_percents:.0f}%, area: {area_percents:.2f}%), box: {box}')
 
             self._draw_text(f'{score_percents:.0f}%', box, image)
         return image
