@@ -1,33 +1,29 @@
 import mysql.connector
 from mysql.connector import Error
-from mysql.connector import pooling
 
 from events_processor import config
 
+_CONN_POOL_DEFAULTS = {'pool_size': 8,
+                       'pool_name': "mysql_conn_pool"}
+
 
 def _db_config(int_keywords=('pool_size',)):
-    db_config = dict(config['db'])
+    db_config = _CONN_POOL_DEFAULTS
+
+    db_config.update(config['db'])
     for kwd in int_keywords:
         if kwd in db_config:
             db_config[kwd] = int(db_config[kwd])
     return db_config
 
 
-_connection_pool = None
 EXCLUDED_ZONE_PREFIX = config['detection_filter']['excluded_zone_prefix']
 
 
-def _get_pool():
-    global _connection_pool
-    if not _connection_pool:
-        _connection_pool = mysql.connector.pooling.MySQLConnectionPool(**_db_config())
-    return _connection_pool
-
-
 def invoke_query(query):
-    conn = cursor = None
+    conn = None
     try:
-        conn = _get_pool().get_connection()
+        conn = mysql.connector.connect(**_db_config())
 
         if conn.is_connected():
             cursor = conn.cursor()
@@ -35,10 +31,7 @@ def invoke_query(query):
     except Error as e:
         print("Error when executing query", e)
     finally:
-        if conn and conn.is_connected():
-            if cursor:
-                cursor.close()
-            conn.close()
+        conn.close()
 
 
 def retrieve_alarm_stats(event_id, frame_id):
