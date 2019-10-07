@@ -58,6 +58,6 @@ def retrieve_zones():
                join Monitors m on m.Id = z.MonitorId
                where z.Name like concat(%(prefix)s, '%')""",
             {'prefix': EXCLUDED_ZONE_PREFIX})
-        return ((m_id, int(w), int(h), name, coords) for (m_id, w, h, name, coords) in cursor.fetchall())
+        return ((str(m_id), int(w), int(h), name, coords) for (m_id, w, h, name, coords) in cursor.fetchall())
 
     return invoke_query(query)
