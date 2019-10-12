@@ -148,18 +148,21 @@ class NotificationWorker(Thread):
 
         self.log.info("Terminating")
 
-    def _send_notification(self, upcoming_notification):
-        self._annotate_image(upcoming_notification.frame_info)
-        notification_succeeded = self._notify(upcoming_notification)
-        if notification_succeeded:
-            with upcoming_notification.lock:
-                upcoming_notification.notification_sent = True
-                upcoming_notification.frame_info = None
-
-            self._notifications.remove(upcoming_notification)
+    def _send_notification(self, event_info):
+        if event_info.notification_sent:
+            self._notifications.remove(event_info)
         else:
-            self.log.error("Notification error, throttling")
-            self._sleep(5)
+            self._annotate_image(event_info.frame_info)
+            notification_succeeded = self._notify(event_info)
+            if notification_succeeded:
+                with event_info.lock:
+                    event_info.notification_sent = True
+                    event_info.frame_info = None
+
+                self._notifications.remove(event_info)
+            else:
+                self.log.error("Notification error, throttling")
+                self._sleep(5)
 
     def stop(self):
         self._stop_requested = True
