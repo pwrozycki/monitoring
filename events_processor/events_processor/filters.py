@@ -5,6 +5,9 @@ from collections import namedtuple
 from shapely import geometry
 
 from events_processor import config, dataaccess
+from events_processor.configtools import set_config, get_config
+
+INTERSECTION_DISCARDED_THRESHOLD = 1E-6
 
 ZonePolygon = namedtuple('ZonePolygon', ['name', 'polygon'])
 
@@ -34,15 +37,15 @@ class DetectionFilter:
         self._max_box_area_percentage = {}
 
         for (key, value) in config['detection_filter'].items():
-            self._set_config(key, value, 'movement_indifferent_min_score', self._movement_indifferent_min_score, float)
-            self._set_config(key, value, 'coarse_movement_min_score', self._coarse_movement_min_score, float)
-            self._set_config(key, value, 'precise_movement_min_score', self._precise_movement_min_score, float)
-            self._set_config(key, value, 'max_movement_to_intersection_ratio', self._max_movement_to_intersection_ratio,
-                             float)
-            self._set_config(key, value, 'min_box_area_percentage', self._min_box_area_percentage, float)
-            self._set_config(key, value, 'max_box_area_percentage', self._max_box_area_percentage, float)
-            self._set_config(key, value, 'excluded_points', self._excluded_points, self._coords_to_points)
-            self._set_config(key, value, 'excluded_polygons', self._excluded_polygons, self._coords_to_polygons)
+            set_config(key, value, 'movement_indifferent_min_score', self._movement_indifferent_min_score, float)
+            set_config(key, value, 'coarse_movement_min_score', self._coarse_movement_min_score, float)
+            set_config(key, value, 'precise_movement_min_score', self._precise_movement_min_score, float)
+            set_config(key, value, 'max_movement_to_intersection_ratio', self._max_movement_to_intersection_ratio,
+                       float)
+            set_config(key, value, 'min_box_area_percentage', self._min_box_area_percentage, float)
+            set_config(key, value, 'max_box_area_percentage', self._max_box_area_percentage, float)
+            set_config(key, value, 'excluded_points', self._excluded_points, self._coords_to_points)
+            set_config(key, value, 'excluded_polygons', self._excluded_polygons, self._coords_to_polygons)
 
         for (m_id, w, h, name, coords) in self._retrieve_zones():
             def transform(x, y):
@@ -50,19 +53,6 @@ class DetectionFilter:
 
             polygons = self._coords_to_polygons(coords.replace(' ', ','), transform=transform)
             self._excluded_zone_polygons.setdefault(m_id, []).append(ZonePolygon(name, polygons[0]))
-
-    def _get_config(self, config_map, monitor_id, default):
-        for key in (monitor_id, 'default'):
-            if key in config_map:
-                return config_map[key]
-        return default
-
-    def _set_config(self, key, value, config_key, dictionary, transform):
-        m = re.match(config_key + r'(\d*)', key)
-        if m:
-            monitor_id = m.group(1)
-            key = monitor_id if monitor_id else 'default'
-            dictionary[key] = transform(value)
 
     def _coords_to_points(self, string):
         return [geometry.Point(*map(int, m.groups())) for m in re.finditer(r'(\d+),(\d+)', string)]
@@ -116,7 +106,7 @@ class DetectionFilter:
 
     def _frame_score_insufficient(self, detection, frame_info):
         monitor_id = frame_info.event_info.event_json['MonitorId']
-        if detection.score >= self._get_config(self._movement_indifferent_min_score, monitor_id, 0):
+        if detection.score >= get_config(self._movement_indifferent_min_score, monitor_id, 0):
             return False
 
         alarm_box = self._retrieve_alarm_stats(frame_info.frame_json['EventId'],
@@ -124,17 +114,17 @@ class DetectionFilter:
         if alarm_box:
             (detection_box, movement_box, intersection_box) = self._calculate_boxes(alarm_box, detection, frame_info)
 
-            if not intersection_box.is_empty:
+            if intersection_box.area > INTERSECTION_DISCARDED_THRESHOLD:
                 movement_ratio = movement_box.area / intersection_box.area
                 details = f"movement_ratio: {movement_ratio:.2f}, detection_box: {detection_box.area:.2f}, " \
                           f"movement_box: {movement_box.area:.2f}, intersection_box: {intersection_box.area:.2f}"
 
-                if detection.score >= self._get_config(self._coarse_movement_min_score, monitor_id, 0):
+                if detection.score >= get_config(self._coarse_movement_min_score, monitor_id, 0):
                     self.log.debug(f"Detection accepted for frame {frame_info} - coarse movement - {details}")
                     return False
 
-                if (movement_ratio < self._get_config(self._max_movement_to_intersection_ratio, monitor_id, 0)
-                        and detection.score >= self._get_config(self._precise_movement_min_score, monitor_id, 0)):
+                if (movement_ratio < get_config(self._max_movement_to_intersection_ratio, monitor_id, 0)
+                        and detection.score >= get_config(self._precise_movement_min_score, monitor_id, 0)):
                     self.log.debug(f"Detection accepted for frame {frame_info} - precise movement - {details}")
                     return False
 
@@ -159,8 +149,8 @@ class DetectionFilter:
     def _detection_area_not_in_range(self, box, frame_info):
         monitor_id = frame_info.event_info.event_json['MonitorId']
         box_area_percentage = self._detection_area(box) / self._frame_area(frame_info) * 100
-        min_box_area_percentage = self._get_config(self._min_box_area_percentage, monitor_id, 0)
-        max_box_area_percentage = self._get_config(self._max_box_area_percentage, monitor_id, 100)
+        min_box_area_percentage = get_config(self._min_box_area_percentage, monitor_id, 0)
+        max_box_area_percentage = get_config(self._max_box_area_percentage, monitor_id, 100)
         if not min_box_area_percentage <= box_area_percentage <= max_box_area_percentage:
             self.log.debug(
                 f"Detection discarded frame {frame_info}, {box} has percentage {box_area_percentage:.2f}% out of range"
