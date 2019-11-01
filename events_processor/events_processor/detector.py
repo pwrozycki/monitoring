@@ -42,21 +42,21 @@ class CoralDetector:
         chunk_height = h // y_chunks
 
         result = []
-
+        img = Image.fromarray(frame_info.image)
         for y in range(y_chunks):
             for x in range(x_chunks):
                 left_x = math.ceil(chunk_width * x)
                 right_x = math.ceil(chunk_width * (x + 1))
                 top_y = math.ceil(chunk_height * y)
                 bottom_y = math.ceil(chunk_height * (y + 1))
-                detections = self.detect_in_rect(frame_info, left_x, top_y, right_x, bottom_y)
+                detections = self.detect_in_rect(frame_info, img, left_x, top_y, right_x, bottom_y)
 
                 result += detections
 
         frame_info.detections = result
 
-    def detect_in_rect(self, frame_info, left_x, top_y, right_x, bottom_y):
-        cropped_img = Image.fromarray(frame_info.image[top_y:bottom_y, left_x:right_x])
+    def detect_in_rect(self, frame_info, img, left_x, top_y, right_x, bottom_y):
+        cropped_img = img.crop((left_x, top_y, right_x, bottom_y))
         self.log.debug(f"waiting for lock - frame: {frame_info}")
         with self._engine_lock:
             self.log.debug(f"starting detection - frame: {frame_info}")
