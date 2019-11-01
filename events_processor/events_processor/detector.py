@@ -31,7 +31,7 @@ class CoralDetector:
         return None
 
     def detect(self, frame_info):
-        (w, h, _) = frame_info.image.shape
+        (h, w, _) = frame_info.image.shape
 
         monitor_id = frame_info.event_info.event_json['MonitorId']
         (x_chunks, y_chunks) = get_config(self._detection_chunks, monitor_id, (1, 1))
@@ -59,7 +59,7 @@ class CoralDetector:
             detections = self._engine.DetectWithImage(cropped_img,
                                                       threshold=self.MIN_SCORE,
                                                       keep_aspect_ratio=True,
-                                                      relative_coord=False, top_k=10)
+                                                      relative_coord=False, top_k=1000)
         for detection in detections:
             (x1, y1, x2, y2) = detection.bounding_box.flatten().tolist()
             detection.bounding_box = np.array([x1 + left_x, y1 + top_y, x2 + left_x, y2 + top_y])
