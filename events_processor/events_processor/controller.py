@@ -29,11 +29,9 @@ class MainController:
         self._threads = []
 
         send_notification = send_notification if send_notification else MailNotificationSender().send_notification
-        self._notification_worker = NotificationWorker(notify=DetectionNotifier(send_notification).notify,
-                                                       notification_queue=notification_queue)
-
-        self._frame_processor_workers = []
-        detect = detect if detect else CoralDetector().detect
+        self._threads.append(NotificationWorker(notify=DetectionNotifier(send_notification).notify,
+                                                notification_queue=notification_queue))
+        detect = self._determine_detect(detect)
         for a in range(self.FRAME_PROCESSING_THREADS):
             processor_worker = FrameProcessorWorker(frame_queue=frame_queue,
                                                     detect=detect,
@@ -41,27 +39,47 @@ class MainController:
                                                     read_image=read_image,
                                                     retrieve_alarm_stats=retrieve_alarm_stats,
                                                     retrieve_zones=retrieve_zones)
-            self._frame_processor_workers.append(processor_worker)
+            self._threads.append(processor_worker)
 
-        self._frame_reader_worker = FrameReaderWorker(frame_queue=frame_queue,
-                                                      event_ids=event_ids,
-                                                      skip_mailed=not event_ids,
-                                                      frame_reader=frame_reader,
-                                                      sleep=sleep)
+        self._threads.append(FrameReaderWorker(frame_queue=frame_queue,
+                                               event_ids=event_ids,
+                                               skip_mailed=not event_ids,
+                                               frame_reader=frame_reader,
+                                               sleep=sleep))
+
+    def _determine_detect(self, detect):
+        self._detector = None
+        if not detect:
+            self._detector = CoralDetector()
+            detect = self._detector.detect
+        return detect
 
     def start(self, watchdog=True):
-        self._threads += self._frame_processor_workers + [self._frame_reader_worker, self._notification_worker]
         for thread in self._threads:
             thread.daemon = True
             thread.start()
 
         if watchdog:
-            self._exit_when_any_thread_terminates()
+            self._do_watchdog()
 
     def stop(self):
         for thread in self._threads:
             thread.stop()
 
-    def _exit_when_any_thread_terminates(self):
-        while all(t.is_alive() for t in self._threads):
+    def _do_watchdog(self):
+        while True:
+            if self._any_thread_is_dead():
+                self.log.error("One of threads has died, terminating")
+                break
+
+            if self._detector_is_stuck():
+                self.log.error("Pending processing is stuck, terminating")
+                break
+
             time.sleep(self.THREAD_WATCHDOG_DELAY)
+
+    def _detector_is_stuck(self):
+        return self._detector and self._detector.get_pending_processing_seconds() > 60
+
+    def _any_thread_is_dead(self):
+        return any(not t.is_alive() for t in self._threads)

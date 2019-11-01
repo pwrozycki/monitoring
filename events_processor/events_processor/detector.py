@@ -1,6 +1,7 @@
 import logging
 import math
 import re
+import time
 from threading import Lock
 
 import numpy as np
@@ -19,6 +20,7 @@ class CoralDetector:
         from edgetpu.detection.engine import DetectionEngine
         self._engine = DetectionEngine(self.MODEL_FILE)
         self._engine_lock = Lock()
+        self._pending_processing_start = None
 
         self._detection_chunks = {}
         for (key, value) in config['coral'].items():
@@ -55,11 +57,17 @@ class CoralDetector:
 
     def detect_in_rect(self, frame_info, left_x, top_y, right_x, bottom_y):
         cropped_img = Image.fromarray(frame_info.image[top_y:bottom_y, left_x:right_x])
+        self.log.debug(f"waiting for lock - frame: {frame_info}")
         with self._engine_lock:
+            self.log.debug(f"starting detection - frame: {frame_info}")
+            self._pending_processing_start = time.monotonic()
             detections = self._engine.DetectWithImage(cropped_img,
                                                       threshold=self.MIN_SCORE,
                                                       keep_aspect_ratio=True,
                                                       relative_coord=False, top_k=1000)
+            self._pending_processing_start = None
+            self.log.debug(f"detection done - frame: {frame_info}")
+
         for detection in detections:
             (x1, y1, x2, y2) = detection.bounding_box.flatten().tolist()
             detection.bounding_box = np.array([x1 + left_x, y1 + top_y, x2 + left_x, y2 + top_y])
@@ -68,3 +76,6 @@ class CoralDetector:
     def detect_str(self, detections):
         return [f"label: {d.label_id}, score: {d.score}, box: {[int(c) for c in d.bounding_box.flatten().tolist()]}" for
                 d in detections]
+
+    def get_pending_processing_seconds(self):
+        return (time.monotonic() - self._pending_processing_start) if self._pending_processing_start else 0
