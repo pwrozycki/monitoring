@@ -78,4 +78,5 @@ class CoralDetector:
                 d in detections]
 
     def get_pending_processing_seconds(self):
-        return (time.monotonic() - self._pending_processing_start) if self._pending_processing_start else 0
+        start = self._pending_processing_start
+        return (time.monotonic() - start) if start else 0
