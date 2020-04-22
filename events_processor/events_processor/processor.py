@@ -1,15 +1,18 @@
 import logging
 import os
 import time
+from queue import Queue
 from threading import Thread
+from typing import Callable, Optional, Any, Iterable
 
 import cv2
 
 from events_processor.filters import DetectionFilter
+from events_processor.models import FrameInfo, EventInfo, Rect, ZoneInfo
 from events_processor.preprocessor import RotatingPreprocessor
 
 
-def get_frame_score(frame_info):
+def get_frame_score(frame_info: FrameInfo) -> float:
     if len(frame_info.detections) > 0:
         return max([p.score for p in frame_info.detections])
     else:
@@ -19,8 +22,14 @@ def get_frame_score(frame_info):
 class FrameProcessorWorker(Thread):
     log = logging.getLogger("events_processor.FrameProcessorWorker")
 
-    def __init__(self, frame_queue, detect, notification_queue,
-                 retrieve_alarm_stats=None, retrieve_zones=None, calculate_score=get_frame_score, read_image=None):
+    def __init__(self,
+                 frame_queue: 'Queue[FrameInfo]',
+                 detect: Optional[Callable[[FrameInfo], None]],
+                 notification_queue: 'Queue[EventInfo]',
+                 retrieve_alarm_stats: Callable[[str, str], Rect] = None,
+                 retrieve_zones: Callable[[], Iterable[ZoneInfo]] = None,
+                 calculate_score: Callable[[FrameInfo], float] = get_frame_score,
+                 read_image: Callable[[str], Any] = None):
         super().__init__()
         self._stop_requested = False
 
@@ -35,19 +44,18 @@ class FrameProcessorWorker(Thread):
         self._calculate_score = calculate_score
         self._read_image = read_image if read_image else self._read_image_from_fs
 
-    def _read_image_from_fs(self, file_name):
+    def _read_image_from_fs(self, file_name: str) -> Any:
         if os.path.isfile(file_name):
             return cv2.imread(file_name)
 
-    def run(self):
+    def run(self) -> None:
         while not self._stop_requested:
             frame_info = self._frame_queue.get()
             if self._stop_requested:
                 break
 
             if frame_info.event_info.notification_sent:
-                self.log.info(
-                    f"Notification already sent for event: {frame_info.event_info}, skipping processing of frame: {frame_info}")
+                self.log.info(f"Notification already sent for event: {frame_info.event_info}, skipping processing of frame: {frame_info}")
                 continue
 
             frame_info.image = self._read_image(frame_info.image_path)
@@ -63,11 +71,11 @@ class FrameProcessorWorker(Thread):
 
         self.log.info(f"Terminating")
 
-    def stop(self):
+    def stop(self) -> None:
         self._stop_requested = True
         self._frame_queue.put(None)
 
-    def _record_event_frame(self, frame_info=None):
+    def _record_event_frame(self, frame_info: FrameInfo) -> None:
         event_info = frame_info.event_info
 
         score = self._calculate_score(frame_info)

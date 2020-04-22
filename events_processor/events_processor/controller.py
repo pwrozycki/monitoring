@@ -1,12 +1,15 @@
 import logging
 import time
 from queue import Queue
+from threading import Thread
+from typing import Callable, Any, List, Iterable
 
 from events_processor import config
 from events_processor.detector import CoralDetector
+from events_processor.models import FrameInfo, EventInfo, Rect, ZoneInfo
 from events_processor.notifications import MailNotificationSender, NotificationWorker, DetectionNotifier
 from events_processor.processor import FrameProcessorWorker
-from events_processor.reader import FrameReaderWorker
+from events_processor.reader import FrameReaderWorker, FrameReader
 
 
 class MainController:
@@ -16,17 +19,17 @@ class MainController:
     log = logging.getLogger("events_processor.EventController")
 
     def __init__(self,
-                 event_ids=None,
-                 detect=None,
-                 send_notification=None,
-                 frame_reader=None,
-                 read_image=None,
-                 retrieve_alarm_stats=None,
-                 retrieve_zones=None,
-                 sleep=time.sleep):
-        frame_queue = Queue()
-        notification_queue = Queue()
-        self._threads = []
+                 event_ids: Iterable[str] = None,
+                 detect: Callable[[FrameInfo], None] = None,
+                 send_notification: Callable[[EventInfo, str, str], bool] = None,
+                 frame_reader: FrameReader = None,
+                 read_image: Callable[[str], Any] = None,
+                 retrieve_alarm_stats: Callable[[str, str], Rect] = None,
+                 retrieve_zones: Callable[[], Iterable[ZoneInfo]] = None,
+                 sleep: Callable[[float], None] = time.sleep):
+        frame_queue: Queue[FrameInfo] = Queue()
+        notification_queue: Queue[EventInfo] = Queue()
+        self._threads: List[Thread] = []
 
         send_notification = send_notification if send_notification else MailNotificationSender().send_notification
         self._threads.append(NotificationWorker(notify=DetectionNotifier(send_notification).notify,
@@ -47,14 +50,14 @@ class MainController:
                                                frame_reader=frame_reader,
                                                sleep=sleep))
 
-    def _determine_detect(self, detect):
+    def _determine_detect(self, detect: Callable[[FrameInfo], None] = None) -> Callable[[FrameInfo], None]:
         self._detector = None
         if not detect:
             self._detector = CoralDetector()
             detect = self._detector.detect
         return detect
 
-    def start(self, watchdog=True):
+    def start(self, watchdog: bool = True) -> None:
         for thread in self._threads:
             thread.daemon = True
             thread.start()
@@ -62,11 +65,11 @@ class MainController:
         if watchdog:
             self._do_watchdog()
 
-    def stop(self):
+    def stop(self) -> None:
         for thread in self._threads:
             thread.stop()
 
-    def _do_watchdog(self):
+    def _do_watchdog(self) -> None:
         while True:
             if self._any_thread_is_dead():
                 self.log.error("One of threads has died, terminating")
@@ -78,8 +81,8 @@ class MainController:
 
             time.sleep(self.THREAD_WATCHDOG_DELAY)
 
-    def _detector_is_stuck(self):
-        return self._detector and self._detector.get_pending_processing_seconds() > 60
+    def _detector_is_stuck(self) -> bool:
+        return self._detector is not None and self._detector.get_pending_processing_seconds() > 60
 
-    def _any_thread_is_dead(self):
+    def _any_thread_is_dead(self) -> bool:
         return any(not t.is_alive() for t in self._threads)

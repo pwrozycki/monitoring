@@ -1,11 +1,13 @@
 import copy
 import json
 import time
+from typing import Callable, Iterable
 
 import numpy as np
 
 import events_processor
 from events_processor.controller import MainController
+from events_processor.models import EventInfo, Detection, Rect, ZoneInfo
 from events_processor.reader import FrameReader
 
 
@@ -13,11 +15,9 @@ class Response:
     pass
 
 
-class Detection:
+class TestDetection(Detection):
     def __init__(self, label_id=0, score=0.5, bounding_box=np.array([1, 1, 50, 50])):
-        self.label_id = label_id
-        self.bounding_box = bounding_box
-        self.score = score
+        super().__init__(Rect(*bounding_box.flatten().tolist()), score, label_id)
 
 
 class ResourceTemplate:
@@ -90,8 +90,8 @@ class ResourceProducer:
 
 
 class Detector:
-    def __init__(self, detections={}):
-        self._detections = detections
+    def __init__(self, detections=None):
+        self._detections = detections if detections else {}
 
     def detect(self, frame_info):
         event_id = frame_info.frame_json['EventId']
@@ -103,7 +103,7 @@ class Sender:
     def __init__(self):
         self.notifications = {}
 
-    def send_notification(self, event_info, subject, message):
+    def send_notification(self, event_info: EventInfo, subject: str, message: str):
         self.notifications[copy.copy(event_info)] = (subject, message)
         print(f"Sending notification with score {event_info.frame_score}")
         return True
@@ -130,14 +130,15 @@ def run_pipeline(detections=None,
                  events=(ResourceTemplate.event_template(),),
                  frames=(ResourceTemplate.frame_template(frames=1),),
                  wait_time=0.2,
-                 config_updates={},
-                 retrieve_alarm_stats=lambda *a: [],
-                 retrieve_zones=lambda *a: []):
+                 config_updates=None,
+                 retrieve_alarm_stats=lambda frame_id, event_id: (),
+                 retrieve_zones: Callable[[], Iterable[ZoneInfo]] = lambda *a: []):
     reset_config()
-    events_processor.config.update(config_updates)
+    if config_updates:
+        events_processor.config.update(config_updates)
 
     res = ResourceProducer(events=events, frames=frames)
-    detections = detections if detections else {0: [Detection(score=score, bounding_box=np.array([1, 1, 50, 50]))]}
+    detections = detections if detections else {0: [TestDetection(score=score, bounding_box=np.array([1, 1, 50, 50]))]}
     detector = Detector({1: detections})
     sender = Sender()
 

@@ -1,13 +1,18 @@
+from typing import Callable, Any, Dict, Iterable
+
 import mysql.connector
 from mysql.connector import Error
 
 from events_processor import config
+from events_processor.models import ZoneInfo, Rect
 
 _CONN_POOL_DEFAULTS = {'pool_size': 8,
                        'pool_name': "mysql_conn_pool"}
 
+EXCLUDED_ZONE_PREFIX = config['detection_filter']['excluded_zone_prefix']
 
-def _db_config(int_keywords=('pool_size',)):
+
+def _db_config(int_keywords: Iterable[str] = ('pool_size',)) -> Dict:
     db_config = _CONN_POOL_DEFAULTS
 
     db_config.update(config['db'])
@@ -17,24 +22,22 @@ def _db_config(int_keywords=('pool_size',)):
     return db_config
 
 
-EXCLUDED_ZONE_PREFIX = config['detection_filter']['excluded_zone_prefix']
-
-
-def invoke_query(query):
+def _invoke_query(query_callback: Callable[[Any], Any]):
     conn = None
     try:
         conn = mysql.connector.connect(**_db_config())
 
         if conn.is_connected():
             cursor = conn.cursor()
-            return query(cursor)
+            return query_callback(cursor)
     except Error as e:
         print("Error when executing query", e)
     finally:
         conn.close()
 
 
-def retrieve_alarm_stats(event_id, frame_id):
+def retrieve_alarm_stats(event_id: str,
+                         frame_id: str) -> Rect:
     def query(cursor):
         cursor.execute(
             """select st.MinX, st.MinY, st.MaxX, st.MaxY 
@@ -47,10 +50,10 @@ def retrieve_alarm_stats(event_id, frame_id):
              'prefix': EXCLUDED_ZONE_PREFIX})
         return cursor.fetchone()
 
-    return invoke_query(query)
+    return Rect(*_invoke_query(query))
 
 
-def retrieve_zones():
+def retrieve_zones() -> Iterable[ZoneInfo]:
     def query(cursor):
         cursor.execute(
             """select m.Id, m.Width, m.Height, z.Name, z.Coords 
@@ -58,6 +61,6 @@ def retrieve_zones():
                join Monitors m on m.Id = z.MonitorId
                where z.Name like concat(%(prefix)s, '%')""",
             {'prefix': EXCLUDED_ZONE_PREFIX})
-        return ((str(m_id), int(w), int(h), name, coords) for (m_id, w, h, name, coords) in cursor.fetchall())
+        return cursor.fetchall()
 
-    return invoke_query(query)
+    return [ZoneInfo(str(m_id), int(w), int(h), name, coords) for (m_id, w, h, name, coords) in _invoke_query(query)]

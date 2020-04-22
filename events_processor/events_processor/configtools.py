@@ -1,7 +1,10 @@
 import re
+from typing import Dict, Callable, Any
 
 
-def get_config(config_map, monitor_id, default):
+def get_config(config_map: Dict,
+               monitor_id: str,
+               default: Any) -> Any:
     for key in (monitor_id, 'default'):
         if key in config_map:
             value = config_map[key]
@@ -10,9 +13,13 @@ def get_config(config_map, monitor_id, default):
     return default
 
 
-def set_config(key, value, config_key, dictionary, transform):
+def set_config(key: str,
+               value: str,
+               config_key: str,
+               dictionary: Dict[str, Any],
+               transform: Callable[[str], Any]):
     m = re.match(config_key + r'(\d*)', key)
     if m:
         monitor_id = m.group(1)
-        key = monitor_id if monitor_id else 'default'
-        dictionary[key] = transform(value)
+        k = monitor_id if monitor_id else 'default'
+        dictionary[k] = transform(value)

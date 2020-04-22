@@ -6,10 +6,13 @@ from events_processor.notifications import FSNotificationSender
 
 def main():
     argparser = ArgumentParser()
-    argparser.add_argument("--fs-notifier", help="write notification images to disk instead of mailing them",
-                           action="store_true")
-    argparser.add_argument("--read-events",
-                           help="analyze specific events instead of fetching recent ones. Specify comma separated list of event ids")
+    argparser.add_argument(
+        "--fs-notifier",
+        help="write notification images to disk instead of mailing them",
+        action="store_true")
+    argparser.add_argument(
+        "--read-events",
+        help="analyze specific events instead of fetching recent ones. Specify comma separated list of event ids")
     args = argparser.parse_args()
 
     event_controller_args = {}

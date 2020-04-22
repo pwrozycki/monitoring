@@ -2,10 +2,13 @@ import json
 import logging
 import time
 from datetime import datetime, timedelta
+from queue import Queue
 from threading import Thread
+from typing import Dict, Optional, Tuple, Callable, Iterable
 
 import requests
 from cachetools import TTLCache
+from requests import Response
 
 from events_processor import config
 from events_processor.models import FrameInfo, EventInfo
@@ -21,10 +24,10 @@ class FrameReader:
 
     log = logging.getLogger("events_processor.FrameReader")
 
-    def __init__(self, get_resource=None):
+    def __init__(self, get_resource: Callable[[str], Optional[Response]] = None):
         self._get_resource = get_resource if get_resource else self._get_resource_by_request
 
-    def _get_past_events_json(self, page):
+    def _get_past_events_json(self, page: int) -> Dict:
         events_fetch_from = datetime.now() - timedelta(seconds=EVENTS_WINDOW_SECONDS)
 
         query = self.EVENT_LIST_URL.format(startTime=datetime.strftime(events_fetch_from, '%Y-%m-%d %H:%M:%S'),
@@ -34,16 +37,17 @@ class FrameReader:
         response = self._get_resource(query)
         if response:
             return json.loads(response.content)
+        return {}
 
-    def get_event_details_json(self, event_id):
+    def get_event_details_json(self, event_id: str) -> Optional[Tuple[Dict, Dict]]:
         query = self.EVENT_DETAILS_URL.format(eventId=event_id)
         response = self._get_resource(query)
         if response:
             data = json.loads(response.content)['event']
-            return (data['Event'], data['Frame'])
-        return (None, None)
+            return data['Event'], data['Frame']
+        return None
 
-    def events_iter(self):
+    def events_iter(self) -> Iterable[Dict]:
         page = 0
         page_count = 1
 
@@ -52,22 +56,24 @@ class FrameReader:
             if not event_json:
                 break
 
-            page_count = event_json['pagination']['pageCount']
-            page = event_json['pagination']['page']
+            page_count = int(event_json['pagination']['pageCount'])
+            page = int(event_json['pagination']['page'])
             yield from (e['Event'] for e in event_json['events'])
 
-    def events_by_id_iter(self, event_ids):
+    def events_by_id_iter(self, event_ids: Iterable[str]) -> Iterable[Dict]:
         for event_id in event_ids:
-            (event_json, frames_json) = self.get_event_details_json(event_id)
-            if not event_json:
+            details = self.get_event_details_json(event_id)
+            if not details:
                 continue
+            (event_json, frames_json) = details
             yield event_json
 
-    def frames_iter(self, event_ids):
+    def frames_iter(self, event_ids: Iterable[str]) -> Iterable[FrameInfo]:
         for event_id in event_ids:
-            (event_json, frames_json) = self.get_event_details_json(event_id)
-            if not event_json:
+            details = self.get_event_details_json(event_id)
+            if not details:
                 continue
+            (event_json, frames_json) = details
 
             for frame_json in frames_json:
                 frame_id = frame_json['FrameId']
@@ -75,7 +81,7 @@ class FrameReader:
                 file_name = self._get_frame_file_name(event_id, event_json, frame_id)
                 yield FrameInfo(frame_json, file_name)
 
-    def _get_frame_file_name(self, event_id, event_json, frame_id):
+    def _get_frame_file_name(self, event_id: str, event_json: Dict, frame_id: str) -> str:
         file_name = self.FRAME_FILE_NAME.format(
             monitorId=event_json['MonitorId'],
             startDay=event_json['StartTime'][:10],
@@ -84,14 +90,15 @@ class FrameReader:
         )
         return file_name
 
-    def _get_resource_by_request(self, url):
+    def _get_resource_by_request(self, url: str) -> Optional[Response]:
         try:
             response = requests.get(url)
             if response.status_code == 200:
                 return response
-        except requests.exceptions.RequestException as e:
+        except requests.exceptions.RequestException:
             pass
         self.log.error(f"Could not retrieve resource: {url}")
+        return None
 
 
 class FrameReaderWorker(Thread):
@@ -100,8 +107,11 @@ class FrameReaderWorker(Thread):
 
     log = logging.getLogger("events_processor.FrameReaderWorker")
 
-    def __init__(self, frame_queue, event_ids=None, skip_mailed=None,
-                 frame_reader=None, sleep=time.sleep):
+    def __init__(self, frame_queue: 'Queue[FrameInfo]',
+                 event_ids: Optional[Iterable[str]] = None,
+                 skip_mailed: bool = False,
+                 frame_reader: FrameReader = None,
+                 sleep: Callable[[float], None] = time.sleep):
         super().__init__()
         self._stop_requested = False
         self._sleep = sleep
@@ -117,7 +127,7 @@ class FrameReaderWorker(Thread):
             self._events_iter = self._frame_reader.events_iter
         self._skip_mailed = skip_mailed
 
-    def run(self):
+    def run(self) -> None:
         while not self._stop_requested:
             before = time.monotonic()
             self._collect_events()
@@ -126,10 +136,10 @@ class FrameReaderWorker(Thread):
 
         self.log.info("Terminating")
 
-    def stop(self):
+    def stop(self) -> None:
         self._stop_requested = True
 
-    def _collect_events(self):
+    def _collect_events(self) -> None:
         self.log.info("Fetching event list")
         for event_json in self._events_iter():
             event_id = event_json['Id']
