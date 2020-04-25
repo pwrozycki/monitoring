@@ -7,6 +7,7 @@ from shapely import geometry
 
 from events_processor import config, dataaccess
 from events_processor.configtools import set_config, get_config
+from events_processor.interfaces import ZoneReader, AlarmBoxReader
 from events_processor.models import Point, FrameInfo, Detection, Rect, ZoneInfo
 
 INTERSECTION_DISCARDED_THRESHOLD = 1E-6
@@ -22,12 +23,12 @@ class DetectionFilter:
 
     def __init__(self,
                  transform_coords: Callable[[str, int, int, Point], Point],
-                 retrieve_alarm_stats: Callable[[str, str], Rect] = None,
-                 retrieve_zones: Callable[[], Iterable[ZoneInfo]] = None):
+                 alarm_box_reader: AlarmBoxReader,
+                 zone_reader: ZoneReader):
         self._labels = self._read_labels()
         self._transform_coords = transform_coords
-        self._retrieve_alarm_stats = retrieve_alarm_stats if retrieve_alarm_stats else dataaccess.retrieve_alarm_stats
-        self._retrieve_zones = retrieve_zones if retrieve_zones else dataaccess.retrieve_zones
+        self._alarm_box_reader = alarm_box_reader
+        self._zone_reader = zone_reader
         self._config_parse()
 
     def _config_parse(self) -> None:
@@ -52,7 +53,7 @@ class DetectionFilter:
             set_config(key, value, 'excluded_points', self._excluded_points, self._coords_to_points)
             set_config(key, value, 'excluded_polygons', self._excluded_polygons, self._coords_to_polygons)
 
-        for zone in self._retrieve_zones():
+        for zone in self._zone_reader.read():
             def transform(x: int, y: int) -> Point:
                 return self._transform_coords(zone.monitor_id, zone.width, zone.height, Point(x, y))
 
@@ -113,8 +114,8 @@ class DetectionFilter:
         if detection.score >= get_config(self._movement_indifferent_min_score, monitor_id, 0):
             return False
 
-        alarm_box = self._retrieve_alarm_stats(frame_info.frame_json['EventId'],
-                                               frame_info.frame_json['FrameId'])
+        alarm_box = self._alarm_box_reader.read(frame_info.frame_json['EventId'],
+                                                frame_info.frame_json['FrameId'])
         if alarm_box:
             (detection_box, movement_box, intersection_box) = self._calculate_boxes(alarm_box, detection, frame_info)
 

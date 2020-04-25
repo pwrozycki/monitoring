@@ -3,7 +3,7 @@ import unittest
 import numpy as np
 
 from events_processor.models import Rect, ZoneInfo
-from tests.core import TestDetection, ResourceTemplate, run_pipeline
+from tests.pipeline import TestDetection, ResourceTemplate, run_pipeline
 
 
 class DetectionTestCase(unittest.TestCase):
@@ -75,7 +75,7 @@ class DetectionTestCase(unittest.TestCase):
             detections={
                 0: [TestDetection(score=0.4, bounding_box=np.array(detection))],
             },
-            retrieve_zones=lambda *x: (ZoneInfo('1', 1000, 1000, 'exclusion', excluded_zone),)
+            zones=(ZoneInfo('1', 1000, 1000, 'exclusion', excluded_zone),)
         )
         return notifications
 
@@ -87,7 +87,7 @@ class DetectionTestCase(unittest.TestCase):
             config_updates={
                 'rotating_preprocessor': {'rotate1': '90'},
             },
-            retrieve_zones=lambda *x: (ZoneInfo('1', 1000, 1000, 'exclusion', '0,0 0,1 1,1 1,0'),)
+            zones=(ZoneInfo('1', 1000, 1000, 'exclusion', '0,0 0,1 1,1 1,0'),)
         )
 
         self.assertEqual(len(notifications), 0)
@@ -113,7 +113,7 @@ class DetectionTestCase(unittest.TestCase):
                 'detection_filter': {'movement_indifferent_min_score': '0.9',
                                      'coarse_movement_min_score': '0.85'}
             },
-            retrieve_alarm_stats=lambda *a: Rect(1, 1, 500, 500)
+            alarm_box=Rect(1, 1, 500, 500)
         )
         return notifications
 
@@ -137,7 +137,7 @@ class DetectionTestCase(unittest.TestCase):
                                      'precise_movement_min_score': '0.3',
                                      'max_movement_to_intersection_ratio': '4'}
             },
-            retrieve_alarm_stats=lambda *a: Rect(0, 0, 1, 1)
+            alarm_box=Rect(0, 0, 1, 1)
         )
         self.assertAlmostEqual(notifications[0].frame_score, 0.4)
 
@@ -152,7 +152,7 @@ class DetectionTestCase(unittest.TestCase):
                                      'precise_movement_min_score': '0.3',
                                      'max_movement_to_intersection_ratio': '4'}
             },
-            retrieve_alarm_stats=lambda *a: Rect(1, 1, 50, 50)
+            alarm_box=Rect(1, 1, 50, 50)
         )
         return notifications
 

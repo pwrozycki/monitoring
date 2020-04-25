@@ -2,12 +2,16 @@ import logging
 import time
 from queue import Queue
 from threading import Thread
-from typing import Callable, Any, List, Iterable
+from typing import List, Iterable
+
+from injector import inject, noninjectable
 
 from events_processor import config
 from events_processor.detector import CoralDetector
-from events_processor.models import FrameInfo, EventInfo, Rect, ZoneInfo
-from events_processor.notifications import MailNotificationSender, NotificationWorker, DetectionNotifier
+from events_processor.interfaces import Detector, ImageReader, NotificationSender, SystemTime, ZoneReader, \
+    AlarmBoxReader
+from events_processor.models import FrameInfo, EventInfo
+from events_processor.notifications import NotificationWorker, DetectionNotifier
 from events_processor.processor import FrameProcessorWorker
 from events_processor.reader import FrameReaderWorker, FrameReader
 
@@ -18,44 +22,38 @@ class MainController:
 
     log = logging.getLogger("events_processor.EventController")
 
+    @inject
+    @noninjectable('event_ids')
     def __init__(self,
-                 event_ids: Iterable[str] = None,
-                 detect: Callable[[FrameInfo], None] = None,
-                 send_notification: Callable[[EventInfo, str, str], bool] = None,
-                 frame_reader: FrameReader = None,
-                 read_image: Callable[[str], Any] = None,
-                 retrieve_alarm_stats: Callable[[str, str], Rect] = None,
-                 retrieve_zones: Callable[[], Iterable[ZoneInfo]] = None,
-                 sleep: Callable[[float], None] = time.sleep):
+                 detector: Detector,
+                 notification_sender: NotificationSender,
+                 frame_reader: FrameReader,
+                 image_reader: ImageReader,
+                 system_time: SystemTime,
+                 alarm_box_reader: AlarmBoxReader,
+                 zone_reader: ZoneReader,
+                 event_ids: Iterable[str] = None):
         frame_queue: Queue[FrameInfo] = Queue()
         notification_queue: Queue[EventInfo] = Queue()
         self._threads: List[Thread] = []
 
-        send_notification = send_notification if send_notification else MailNotificationSender().send_notification
-        self._threads.append(NotificationWorker(notify=DetectionNotifier(send_notification).notify,
+        self._threads.append(NotificationWorker(notify=DetectionNotifier(notification_sender).notify,
                                                 notification_queue=notification_queue))
-        detect = self._determine_detect(detect)
+        self._detector = detector
         for a in range(self.FRAME_PROCESSING_THREADS):
             processor_worker = FrameProcessorWorker(frame_queue=frame_queue,
-                                                    detect=detect,
                                                     notification_queue=notification_queue,
-                                                    read_image=read_image,
-                                                    retrieve_alarm_stats=retrieve_alarm_stats,
-                                                    retrieve_zones=retrieve_zones)
+                                                    detector=detector,
+                                                    image_reader=image_reader,
+                                                    alarm_box_reader=alarm_box_reader,
+                                                    zone_reader=zone_reader)
             self._threads.append(processor_worker)
 
         self._threads.append(FrameReaderWorker(frame_queue=frame_queue,
                                                event_ids=event_ids,
                                                skip_mailed=not event_ids,
                                                frame_reader=frame_reader,
-                                               sleep=sleep))
-
-    def _determine_detect(self, detect: Callable[[FrameInfo], None] = None) -> Callable[[FrameInfo], None]:
-        self._detector = None
-        if not detect:
-            self._detector = CoralDetector()
-            detect = self._detector.detect
-        return detect
+                                               system_time=system_time))
 
     def start(self, watchdog: bool = True) -> None:
         for thread in self._threads:
@@ -82,7 +80,7 @@ class MainController:
             time.sleep(self.THREAD_WATCHDOG_DELAY)
 
     def _detector_is_stuck(self) -> bool:
-        return self._detector is not None and self._detector.get_pending_processing_seconds() > 60
+        return isinstance(self._detector, CoralDetector) and self._detector.get_pending_processing_seconds() > 60
 
     def _any_thread_is_dead(self) -> bool:
         return any(not t.is_alive() for t in self._threads)

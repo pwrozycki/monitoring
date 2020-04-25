@@ -4,6 +4,7 @@ import mysql.connector
 from mysql.connector import Error
 
 from events_processor import config
+from events_processor.interfaces import ZoneReader, AlarmBoxReader
 from events_processor.models import ZoneInfo, Rect
 
 _CONN_POOL_DEFAULTS = {'pool_size': 8,
@@ -36,9 +37,8 @@ def _invoke_query(query_callback: Callable[[Any], Any]):
         conn.close()
 
 
-def retrieve_alarm_stats(event_id: str,
-                         frame_id: str) -> Rect:
-    def query(cursor):
+class DBAlarmBoxReader(AlarmBoxReader):
+    def query(self, cursor):
         cursor.execute(
             """select st.MinX, st.MinY, st.MaxX, st.MaxY 
                  from Stats st
@@ -50,11 +50,13 @@ def retrieve_alarm_stats(event_id: str,
              'prefix': EXCLUDED_ZONE_PREFIX})
         return cursor.fetchone()
 
-    return Rect(*_invoke_query(query))
+    def read(self, event_id: str,
+             frame_id: str) -> Rect:
+        return Rect(*_invoke_query(self.query))
 
 
-def retrieve_zones() -> Iterable[ZoneInfo]:
-    def query(cursor):
+class DBZoneReader(ZoneReader):
+    def query(self, cursor):
         cursor.execute(
             """select m.Id, m.Width, m.Height, z.Name, z.Coords 
                from Zones z
@@ -63,4 +65,6 @@ def retrieve_zones() -> Iterable[ZoneInfo]:
             {'prefix': EXCLUDED_ZONE_PREFIX})
         return cursor.fetchall()
 
-    return [ZoneInfo(str(m_id), int(w), int(h), name, coords) for (m_id, w, h, name, coords) in _invoke_query(query)]
+    def read(self) -> Iterable[ZoneInfo]:
+        return [ZoneInfo(str(m_id), int(w), int(h), name, coords) for (m_id, w, h, name, coords) in
+                _invoke_query(self.query)]

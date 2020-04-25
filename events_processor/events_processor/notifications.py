@@ -14,11 +14,12 @@ import cv2
 import requests
 
 from events_processor import config
+from events_processor.interfaces import NotificationSender
 from events_processor.models import EventInfo
 from events_processor.renderer import DetectionRenderer
 
 
-class MailNotificationSender:
+class MailNotificationSender(NotificationSender):
     HOST = config['mail']['host']
     PORT = int(config['mail']['port'])
     USER = config['mail']['user']
@@ -29,7 +30,7 @@ class MailNotificationSender:
 
     log = logging.getLogger('events_processor.MailNotificationSender')
 
-    def send_notification(self, event_info: EventInfo, subject: str, message: str) -> bool:
+    def send(self, event_info: EventInfo, subject: str, message: str) -> bool:
         msg = MIMEMultipart()
         msg['Subject'] = subject
 
@@ -93,7 +94,7 @@ class DetectionNotifier:
 
     log = logging.getLogger('events_processor.DetectionNotifier')
 
-    def __init__(self, notification_sender: Callable[[EventInfo, str, str], bool]):
+    def __init__(self, notification_sender: NotificationSender):
         self._notification_sender = notification_sender
 
     def notify(self, event_info: EventInfo) -> bool:
@@ -104,7 +105,7 @@ class DetectionNotifier:
         subject = self.SUBJECT.format(**mail_dict)
         message = self.MESSAGE.format(**mail_dict)
 
-        return self._notification_sender(event_info, subject, message)
+        return self._notification_sender.send(event_info, subject, message)
 
 
 class NotificationWorker(Thread):
@@ -136,7 +137,8 @@ class NotificationWorker(Thread):
             seconds_to_notification = self._get_notification_remaining_secs(notification)
 
             if seconds_to_notification == 0:
-                self._send_notification(notification)
+                if notification:
+                    self._send_notification(notification)
             else:
                 try:
                     incoming_notification = self._notification_queue.get(timeout=seconds_to_notification)

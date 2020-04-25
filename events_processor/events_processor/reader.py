@@ -4,17 +4,33 @@ import time
 from datetime import datetime, timedelta
 from queue import Queue
 from threading import Thread
-from typing import Dict, Optional, Tuple, Callable, Iterable
+from typing import Dict, Optional, Tuple, Iterable
 
 import requests
 from cachetools import TTLCache
+from injector import inject
 from requests import Response
 
 from events_processor import config
+from events_processor.interfaces import SystemTime, ResourceReader
 from events_processor.models import FrameInfo, EventInfo
 
 EVENTS_WINDOW_SECONDS = config['timings'].getint('events_window_seconds')
 CACHE_SECONDS_BUFFER = config['timings'].getint('cache_seconds_buffer')
+
+
+class WebResourceReader(ResourceReader):
+    log = logging.getLogger("events_processor.WebResourceReader")
+
+    def read(self, url: str) -> Optional[Response]:
+        try:
+            response = requests.get(url)
+            if response.status_code == 200:
+                return response
+        except requests.exceptions.RequestException:
+            pass
+        self.log.error(f"Could not retrieve resource: {url}")
+        return None
 
 
 class FrameReader:
@@ -24,8 +40,9 @@ class FrameReader:
 
     log = logging.getLogger("events_processor.FrameReader")
 
-    def __init__(self, get_resource: Callable[[str], Optional[Response]] = None):
-        self._get_resource = get_resource if get_resource else self._get_resource_by_request
+    @inject
+    def __init__(self, resource_reader: ResourceReader):
+        self._resource_reader = resource_reader
 
     def _get_past_events_json(self, page: int) -> Dict:
         events_fetch_from = datetime.now() - timedelta(seconds=EVENTS_WINDOW_SECONDS)
@@ -34,14 +51,14 @@ class FrameReader:
                                            page=page)
         query = query.replace(' ', '%20')
 
-        response = self._get_resource(query)
+        response = self._resource_reader.read(query)
         if response:
             return json.loads(response.content)
         return {}
 
     def get_event_details_json(self, event_id: str) -> Optional[Tuple[Dict, Dict]]:
         query = self.EVENT_DETAILS_URL.format(eventId=event_id)
-        response = self._get_resource(query)
+        response = self._resource_reader.read(query)
         if response:
             data = json.loads(response.content)['event']
             return data['Event'], data['Frame']
@@ -90,16 +107,6 @@ class FrameReader:
         )
         return file_name
 
-    def _get_resource_by_request(self, url: str) -> Optional[Response]:
-        try:
-            response = requests.get(url)
-            if response.status_code == 200:
-                return response
-        except requests.exceptions.RequestException:
-            pass
-        self.log.error(f"Could not retrieve resource: {url}")
-        return None
-
 
 class FrameReaderWorker(Thread):
     EVENT_LOOP_SECONDS = config['timings'].getint('event_loop_seconds')
@@ -107,20 +114,22 @@ class FrameReaderWorker(Thread):
 
     log = logging.getLogger("events_processor.FrameReaderWorker")
 
-    def __init__(self, frame_queue: 'Queue[FrameInfo]',
+    def __init__(self,
+                 frame_queue: 'Queue[FrameInfo]',
+                 system_time: SystemTime,
+                 frame_reader: FrameReader,
                  event_ids: Optional[Iterable[str]] = None,
                  skip_mailed: bool = False,
-                 frame_reader: FrameReader = None,
-                 sleep: Callable[[float], None] = time.sleep):
+                 ):
         super().__init__()
         self._stop_requested = False
-        self._sleep = sleep
+        self._system_time = system_time
 
         self._frame_queue = frame_queue
         self._events_cache = TTLCache(maxsize=10000000, ttl=EVENTS_WINDOW_SECONDS + CACHE_SECONDS_BUFFER)
         self._frames_cache = TTLCache(maxsize=10000000, ttl=EVENTS_WINDOW_SECONDS + CACHE_SECONDS_BUFFER)
 
-        self._frame_reader = frame_reader if frame_reader else FrameReader()
+        self._frame_reader = frame_reader
         if event_ids:
             self._events_iter = lambda: self._frame_reader.events_by_id_iter(event_ids)
         else:
@@ -132,7 +141,7 @@ class FrameReaderWorker(Thread):
             before = time.monotonic()
             self._collect_events()
             time_spent = (time.monotonic() - before)
-            self._sleep(max(self.EVENT_LOOP_SECONDS - time_spent, 0))
+            self._system_time.sleep(max(self.EVENT_LOOP_SECONDS - time_spent, 0))
 
         self.log.info("Terminating")
 

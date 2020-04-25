@@ -9,10 +9,11 @@ from PIL import Image
 
 from events_processor import config
 from events_processor.configtools import get_config, set_config
+from events_processor.interfaces import Detector
 from events_processor.models import FrameInfo, Rect, Detection
 
 
-class CoralDetector:
+class CoralDetector(Detector):
     MODEL_FILE = config['coral']['model_file']
     MIN_SCORE = float(config['coral']['min_score'])
 
