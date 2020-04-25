@@ -1,15 +1,15 @@
 import logging
 import os
 import time
-from queue import Queue
 from threading import Thread
 from typing import Any
 
 import cv2
+from injector import inject
 
 from events_processor.filters import DetectionFilter
 from events_processor.interfaces import Detector, ImageReader, ZoneReader, AlarmBoxReader
-from events_processor.models import FrameInfo, EventInfo
+from events_processor.models import FrameInfo, FrameQueue, NotificationQueue
 from events_processor.preprocessor import RotatingPreprocessor
 
 
@@ -29,9 +29,10 @@ class FSImageReader(ImageReader):
 class FrameProcessorWorker(Thread):
     log = logging.getLogger("events_processor.FrameProcessorWorker")
 
+    @inject
     def __init__(self,
-                 frame_queue: 'Queue[FrameInfo]',
-                 notification_queue: 'Queue[EventInfo]',
+                 frame_queue: FrameQueue,
+                 notification_queue: NotificationQueue,
                  detector: Detector,
                  image_reader: ImageReader,
                  zone_reader: ZoneReader,

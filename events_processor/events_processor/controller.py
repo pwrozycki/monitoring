@@ -1,19 +1,14 @@
 import logging
 import time
-from queue import Queue
-from threading import Thread
-from typing import List, Iterable
 
-from injector import inject, noninjectable
+from injector import inject, ProviderOf
 
 from events_processor import config
 from events_processor.detector import CoralDetector
-from events_processor.interfaces import Detector, ImageReader, NotificationSender, SystemTime, ZoneReader, \
-    AlarmBoxReader
-from events_processor.models import FrameInfo, EventInfo
-from events_processor.notifications import NotificationWorker, DetectionNotifier
+from events_processor.interfaces import Detector, SystemTime
+from events_processor.notifications import NotificationWorker
 from events_processor.processor import FrameProcessorWorker
-from events_processor.reader import FrameReaderWorker, FrameReader
+from events_processor.reader import FrameReaderWorker
 
 
 class MainController:
@@ -23,37 +18,15 @@ class MainController:
     log = logging.getLogger("events_processor.EventController")
 
     @inject
-    @noninjectable('event_ids')
     def __init__(self,
                  detector: Detector,
-                 notification_sender: NotificationSender,
-                 frame_reader: FrameReader,
-                 image_reader: ImageReader,
-                 system_time: SystemTime,
-                 alarm_box_reader: AlarmBoxReader,
-                 zone_reader: ZoneReader,
-                 event_ids: Iterable[str] = None):
-        frame_queue: Queue[FrameInfo] = Queue()
-        notification_queue: Queue[EventInfo] = Queue()
-        self._threads: List[Thread] = []
-
-        self._threads.append(NotificationWorker(notify=DetectionNotifier(notification_sender).notify,
-                                                notification_queue=notification_queue))
+                 frame_reader_worker: FrameReaderWorker,
+                 notification_worker: NotificationWorker,
+                 frame_processor_worker_provider: ProviderOf[FrameProcessorWorker]):
         self._detector = detector
-        for a in range(self.FRAME_PROCESSING_THREADS):
-            processor_worker = FrameProcessorWorker(frame_queue=frame_queue,
-                                                    notification_queue=notification_queue,
-                                                    detector=detector,
-                                                    image_reader=image_reader,
-                                                    alarm_box_reader=alarm_box_reader,
-                                                    zone_reader=zone_reader)
-            self._threads.append(processor_worker)
 
-        self._threads.append(FrameReaderWorker(frame_queue=frame_queue,
-                                               event_ids=event_ids,
-                                               skip_mailed=not event_ids,
-                                               frame_reader=frame_reader,
-                                               system_time=system_time))
+        self._threads = [notification_worker, frame_reader_worker]
+        self._threads += [frame_processor_worker_provider.get() for a in range(self.FRAME_PROCESSING_THREADS)]
 
     def start(self, watchdog: bool = True) -> None:
         for thread in self._threads:
@@ -84,3 +57,8 @@ class MainController:
 
     def _any_thread_is_dead(self) -> bool:
         return any(not t.is_alive() for t in self._threads)
+
+
+class DefaultSystemTime(SystemTime):
+    def sleep(self, seconds: float) -> None:
+        time.sleep(seconds)

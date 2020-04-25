@@ -6,16 +6,17 @@ import time
 from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from queue import Empty, Queue
+from queue import Empty
 from threading import Thread
-from typing import Optional, Callable, Set
+from typing import Optional, Set
 
 import cv2
 import requests
+from injector import inject
 
 from events_processor import config
-from events_processor.interfaces import NotificationSender
-from events_processor.models import EventInfo
+from events_processor.interfaces import NotificationSender, SystemTime
+from events_processor.models import EventInfo, NotificationQueue
 from events_processor.renderer import DetectionRenderer
 
 
@@ -94,6 +95,7 @@ class DetectionNotifier:
 
     log = logging.getLogger('events_processor.DetectionNotifier')
 
+    @inject
     def __init__(self, notification_sender: NotificationSender):
         self._notification_sender = notification_sender
 
@@ -113,14 +115,17 @@ class NotificationWorker(Thread):
 
     log = logging.getLogger("events_processor.NotificationWorker")
 
-    def __init__(self, notify: Callable[[EventInfo], bool], notification_queue: 'Queue[EventInfo]', annotate_image=None,
-                 sleep=time.sleep):
+    @inject
+    def __init__(self,
+                 notification_sender: NotificationSender,
+                 notification_queue: NotificationQueue,
+                 system_time=SystemTime):
         super().__init__()
         self._stop_requested = False
-        self._sleep = sleep
+        self._system_time = system_time
 
-        self._notify = notify
-        self._annotate_image = annotate_image if annotate_image else DetectionRenderer().annotate_image
+        self._notify = DetectionNotifier(notification_sender).notify
+        self._annotate_image = DetectionRenderer().annotate_image
 
         self._notification_queue = notification_queue
         self._notifications: Set[EventInfo] = set()
@@ -166,7 +171,7 @@ class NotificationWorker(Thread):
                 self._notifications.remove(event_info)
             else:
                 self.log.error("Notification error, throttling")
-                self._sleep(5)
+                self._system_time.sleep(5)
 
     def stop(self) -> None:
         self._stop_requested = True

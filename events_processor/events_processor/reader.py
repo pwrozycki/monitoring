@@ -2,18 +2,17 @@ import json
 import logging
 import time
 from datetime import datetime, timedelta
-from queue import Queue
 from threading import Thread
 from typing import Dict, Optional, Tuple, Iterable
 
 import requests
 from cachetools import TTLCache
-from injector import inject
+from injector import inject, noninjectable
 from requests import Response
 
 from events_processor import config
 from events_processor.interfaces import SystemTime, ResourceReader
-from events_processor.models import FrameInfo, EventInfo
+from events_processor.models import FrameInfo, EventInfo, FrameQueue
 
 EVENTS_WINDOW_SECONDS = config['timings'].getint('events_window_seconds')
 CACHE_SECONDS_BUFFER = config['timings'].getint('cache_seconds_buffer')
@@ -114,8 +113,10 @@ class FrameReaderWorker(Thread):
 
     log = logging.getLogger("events_processor.FrameReaderWorker")
 
+    @inject
+    @noninjectable('event_ids', 'skip_mailed')
     def __init__(self,
-                 frame_queue: 'Queue[FrameInfo]',
+                 frame_queue: FrameQueue,
                  system_time: SystemTime,
                  frame_reader: FrameReader,
                  event_ids: Optional[Iterable[str]] = None,

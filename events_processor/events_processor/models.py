@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
+from queue import Queue
 from threading import Lock
-from typing import Any, Sequence, Dict, Tuple
+from typing import Any, Sequence, Dict, Tuple, NewType
 
 
 @dataclass
@@ -103,3 +104,7 @@ class ZoneInfo:
     height: int
     name: str
     coords: str
+
+
+NotificationQueue = NewType('NotificationQueue', Queue)
+FrameQueue = NewType('FrameQueue', Queue)
