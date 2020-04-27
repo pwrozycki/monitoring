@@ -8,7 +8,7 @@ import cv2
 from injector import inject
 
 from events_processor.filters import DetectionFilter
-from events_processor.interfaces import Detector, ImageReader, ZoneReader, AlarmBoxReader
+from events_processor.interfaces import Detector, ImageReader
 from events_processor.models import FrameInfo, FrameQueue, NotificationQueue
 from events_processor.preprocessor import RotatingPreprocessor
 
@@ -35,20 +35,18 @@ class FrameProcessorWorker(Thread):
                  notification_queue: NotificationQueue,
                  detector: Detector,
                  image_reader: ImageReader,
-                 zone_reader: ZoneReader,
-                 alarm_box_reader: AlarmBoxReader):
+                 detection_filter: DetectionFilter,
+                 preprocessor: RotatingPreprocessor):
 
         super().__init__()
         self._stop_requested = False
 
         self._frame_queue = frame_queue
         self._notification_queue = notification_queue
-        self._preprocessor = RotatingPreprocessor()
         self._detector = detector
-        self._filter_detections = DetectionFilter(transform_coords=self._preprocessor.transform_coords,
-                                                  alarm_box_reader=alarm_box_reader,
-                                                  zone_reader=zone_reader
-                                                  ).filter_detections
+        self._detection_filter = detection_filter
+        self._preprocessor = preprocessor
+
         self._calculate_score = get_frame_score
         self._image_reader = image_reader
 
@@ -73,7 +71,7 @@ class FrameProcessorWorker(Thread):
 
             for action in (self._preprocessor.preprocess,
                            self._detector.detect,
-                           self._filter_detections,
+                           self._detection_filter.filter_detections,
                            self._record_event_frame):
                 if action:
                     action(frame_info)

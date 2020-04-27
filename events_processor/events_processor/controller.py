@@ -3,28 +3,29 @@ import time
 
 from injector import inject, ProviderOf
 
-from events_processor import config
 from events_processor.detector import CoralDetector
 from events_processor.interfaces import Detector, SystemTime
+from events_processor.models import Config
 from events_processor.notifications import NotificationWorker
 from events_processor.processor import FrameProcessorWorker
 from events_processor.reader import FrameReaderWorker
 
 
 class MainController:
-    FRAME_PROCESSING_THREADS = config['threading'].getint('frame_processing_threads')
-    THREAD_WATCHDOG_DELAY = config['threading'].getint('thread_watchdog_delay')
-
     log = logging.getLogger("events_processor.EventController")
 
     @inject
     def __init__(self,
+                 config: Config,
                  detector: Detector,
                  frame_reader_worker: FrameReaderWorker,
                  notification_worker: NotificationWorker,
-                 frame_processor_worker_provider: ProviderOf[FrameProcessorWorker]):
-        self._detector = detector
+                 frame_processor_worker_provider: ProviderOf[FrameProcessorWorker],
+                 ):
+        self.FRAME_PROCESSING_THREADS = config['threading'].getint('frame_processing_threads')
+        self.THREAD_WATCHDOG_DELAY = config['threading'].getint('thread_watchdog_delay')
 
+        self._detector = detector
         self._threads = [notification_worker, frame_reader_worker]
         self._threads += [frame_processor_worker_provider.get() for a in range(self.FRAME_PROCESSING_THREADS)]
 

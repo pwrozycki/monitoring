@@ -3,32 +3,38 @@ import re
 from collections import namedtuple
 from typing import Callable, Tuple, Dict, Iterable, Any, List
 
+from injector import inject
 from shapely import geometry
 
-from events_processor import config, dataaccess
 from events_processor.configtools import set_config, get_config
 from events_processor.interfaces import ZoneReader, AlarmBoxReader
-from events_processor.models import Point, FrameInfo, Detection, Rect, ZoneInfo
+from events_processor.models import Point, FrameInfo, Detection, Rect, Config
+from events_processor.preprocessor import RotatingPreprocessor
 
 INTERSECTION_DISCARDED_THRESHOLD = 1E-6
 
 ZonePolygon = namedtuple('ZonePolygon', ['name', 'polygon'])
 
 
-class DetectionFilter:
-    LABEL_FILE = config['detection_filter']['label_file']
-    OBJECT_LABELS = config['detection_filter']['object_labels'].split(',')
+# TODO: prozycki: move config read logic to external class
 
+class DetectionFilter:
     log = logging.getLogger('events_processor.DetectionFilter')
 
+    @inject
     def __init__(self,
-                 transform_coords: Callable[[str, int, int, Point], Point],
+                 preprocessor: RotatingPreprocessor,
                  alarm_box_reader: AlarmBoxReader,
-                 zone_reader: ZoneReader):
+                 zone_reader: ZoneReader,
+                 config: Config):
+        self.OBJECT_LABELS = config['detection_filter']['object_labels'].split(',')
+        self.LABEL_FILE = config['detection_filter']['label_file']
+
         self._labels = self._read_labels()
-        self._transform_coords = transform_coords
+        self._transform_coords = preprocessor.transform_coords
         self._alarm_box_reader = alarm_box_reader
         self._zone_reader = zone_reader
+        self._config = config
         self._config_parse()
 
     def _config_parse(self) -> None:
@@ -42,7 +48,7 @@ class DetectionFilter:
         self._min_box_area_percentage: Dict[str, float] = {}
         self._max_box_area_percentage: Dict[str, float] = {}
 
-        for (key, value) in config['detection_filter'].items():
+        for (key, value) in self._config['detection_filter'].items():
             set_config(key, value, 'movement_indifferent_min_score', self._movement_indifferent_min_score, float)
             set_config(key, value, 'coarse_movement_min_score', self._coarse_movement_min_score, float)
             set_config(key, value, 'precise_movement_min_score', self._precise_movement_min_score, float)

@@ -7,19 +7,18 @@ from typing import Any, Iterable
 
 from PIL import Image
 
-from events_processor import config
 from events_processor.configtools import get_config, set_config
 from events_processor.interfaces import Detector
-from events_processor.models import FrameInfo, Rect, Detection
+from events_processor.models import FrameInfo, Rect, Detection, Config
 
 
 class CoralDetector(Detector):
-    MODEL_FILE = config['coral']['model_file']
-    MIN_SCORE = float(config['coral']['min_score'])
-
     log = logging.getLogger("events_processor.CoralDetector")
 
-    def __init__(self):
+    def __init__(self, config: Config):
+        self.MODEL_FILE = config['coral']['model_file']
+        self.MIN_SCORE = float(config['coral']['min_score'])
+
         from edgetpu.detection.engine import DetectionEngine
         self._engine = DetectionEngine(self.MODEL_FILE)
         self._engine_lock = Lock()

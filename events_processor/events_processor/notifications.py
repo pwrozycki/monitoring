@@ -14,22 +14,26 @@ import cv2
 import requests
 from injector import inject
 
-from events_processor import config
 from events_processor.interfaces import NotificationSender, SystemTime
-from events_processor.models import EventInfo, NotificationQueue
+from events_processor.models import EventInfo, NotificationQueue, Config
 from events_processor.renderer import DetectionRenderer
 
 
 class MailNotificationSender(NotificationSender):
-    HOST = config['mail']['host']
-    PORT = int(config['mail']['port'])
-    USER = config['mail']['user']
-    PASSWORD = config['mail']['password']
-    TO_ADDR = config['mail']['to_addr']
-    FROM_ADDR = config['mail']['from_addr']
-    TIMEOUT = float(config['mail']['timeout'])
-
     log = logging.getLogger('events_processor.MailNotificationSender')
+
+    def __init__(self,
+                 config: Config,
+                 event_updater: 'EventUpdater'):
+        self.HOST = config['mail']['host']
+        self.PORT = int(config['mail']['port'])
+        self.USER = config['mail']['user']
+        self.PASSWORD = config['mail']['password']
+        self.TO_ADDR = config['mail']['to_addr']
+        self.FROM_ADDR = config['mail']['from_addr']
+        self.TIMEOUT = float(config['mail']['timeout'])
+
+        self._event_updater = event_updater
 
     def send(self, event_info: EventInfo, subject: str, message: str) -> bool:
         msg = MIMEMultipart()
@@ -51,7 +55,7 @@ class MailNotificationSender(NotificationSender):
             s.sendmail(self.FROM_ADDR, self.TO_ADDR, msg.as_string())
             s.quit()
 
-            return EventUpdater.update_event(event_info, Emailed=1)
+            return self._event_updater.update_event(event_info, Emailed=1)
         except Exception as e:
             self.log.error(f"Error encountered when sending mail notification: {e}")
         return False
@@ -72,31 +76,33 @@ class FSNotificationSender:
 
 
 class EventUpdater:
-    EVENT_DETAILS_URL = config['zm']['event_details_url']
-
     log = logging.getLogger('events_processor.EventUpdater')
 
-    @classmethod
-    def update_event(cls, event_info: EventInfo, **update_spec) -> bool:
+    def __init__(self, config: Config):
+        self.EVENT_DETAILS_URL = config['zm']['event_details_url']
+
+    def update_event(self, event_info: EventInfo, **update_spec) -> bool:
         try:
-            url = cls.EVENT_DETAILS_URL.format(eventId=event_info.event_json['Id'])
+            url = self.EVENT_DETAILS_URL.format(eventId=event_info.event_json['Id'])
             mark_as_mailed_json = {'Event': update_spec}
             response = requests.post(url, json=mark_as_mailed_json)
             response_json = json.loads(response.content)
             return 200 == response.status_code and 'Saved' == response_json.get('message', '')
         except Exception as e:
-            cls.log.error(f"Error encountered during event update: {e}")
+            self.log.error(f"Error encountered during event update: {e}")
             return False
 
 
 class DetectionNotifier:
-    SUBJECT = config['mail']['subject']
-    MESSAGE = re.sub(r'\n\|', '\n', config['mail']['message'])
-
     log = logging.getLogger('events_processor.DetectionNotifier')
 
     @inject
-    def __init__(self, notification_sender: NotificationSender):
+    def __init__(self,
+                 notification_sender: NotificationSender,
+                 config: Config):
+        self.SUBJECT = config['mail']['subject']
+        self.MESSAGE = re.sub(r'\n\|', '\n', config['mail']['message'])
+
         self._notification_sender = notification_sender
 
     def notify(self, event_info: EventInfo) -> bool:
@@ -111,20 +117,22 @@ class DetectionNotifier:
 
 
 class NotificationWorker(Thread):
-    NOTIFICATION_DELAY_SECONDS = config['timings'].getint('notification_delay_seconds')
-
     log = logging.getLogger("events_processor.NotificationWorker")
 
     @inject
     def __init__(self,
                  notification_sender: NotificationSender,
                  notification_queue: NotificationQueue,
-                 system_time=SystemTime):
+                 detection_notifier: DetectionNotifier,
+                 system_time: SystemTime,
+                 config: Config):
         super().__init__()
+        self.NOTIFICATION_DELAY_SECONDS = config['timings'].getint('notification_delay_seconds')
+
         self._stop_requested = False
         self._system_time = system_time
 
-        self._notify = DetectionNotifier(notification_sender).notify
+        self._detection_notifier = detection_notifier
         self._annotate_image = DetectionRenderer().annotate_image
 
         self._notification_queue = notification_queue
@@ -162,7 +170,7 @@ class NotificationWorker(Thread):
             self._notifications.remove(event_info)
         else:
             self._annotate_image(event_info.frame_info)
-            notification_succeeded = self._notify(event_info)
+            notification_succeeded = self._detection_notifier.notify(event_info)
             if notification_succeeded:
                 with event_info.lock:
                     event_info.notification_sent = True

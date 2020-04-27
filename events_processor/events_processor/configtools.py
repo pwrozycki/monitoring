@@ -1,5 +1,12 @@
 import re
+from configparser import ConfigParser, ExtendedInterpolation
 from typing import Dict, Callable, Any
+
+
+def properties_config(ini):
+    config = ConfigParser(interpolation=ExtendedInterpolation())
+    config.read(ini)
+    return config
 
 
 def get_config(config_map: Dict,

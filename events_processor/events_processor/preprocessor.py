@@ -2,16 +2,21 @@ import re
 from typing import Tuple, Any
 
 import cv2
+from injector import inject
 
-from events_processor import config
-from events_processor.models import FrameInfo, Point
+from events_processor.models import FrameInfo, Point, Config
 
+
+# TODO: prozycki: refactor and move to separate classes: logic responsible for:
+# - reading configuration
+# - applying transformation to point
 
 class RotatingPreprocessor:
-    def __init__(self):
-        self._config_parse_rotations()
+    @inject
+    def __init__(self, config: Config):
+        self._config_parse_rotations(config)
 
-    def _config_parse_rotations(self) -> None:
+    def _config_parse_rotations(self, config) -> None:
         self._rotations = {}
         for (key, value) in config['rotating_preprocessor'].items():
             match = re.match(r'rotate(\d+)', key)

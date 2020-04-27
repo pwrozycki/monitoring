@@ -10,12 +10,8 @@ from cachetools import TTLCache
 from injector import inject, noninjectable
 from requests import Response
 
-from events_processor import config
 from events_processor.interfaces import SystemTime, ResourceReader
-from events_processor.models import FrameInfo, EventInfo, FrameQueue
-
-EVENTS_WINDOW_SECONDS = config['timings'].getint('events_window_seconds')
-CACHE_SECONDS_BUFFER = config['timings'].getint('cache_seconds_buffer')
+from events_processor.models import FrameInfo, EventInfo, FrameQueue, Config
 
 
 class WebResourceReader(ResourceReader):
@@ -33,18 +29,21 @@ class WebResourceReader(ResourceReader):
 
 
 class FrameReader:
-    EVENT_LIST_URL = config['zm']['event_list_url']
-    EVENT_DETAILS_URL = config['zm']['event_details_url']
-    FRAME_FILE_NAME = config['zm']['frame_jpg_path']
-
     log = logging.getLogger("events_processor.FrameReader")
 
     @inject
-    def __init__(self, resource_reader: ResourceReader):
+    def __init__(self,
+                 resource_reader: ResourceReader,
+                 config: Config):
+        self.EVENT_LIST_URL = config['zm']['event_list_url']
+        self.EVENT_DETAILS_URL = config['zm']['event_details_url']
+        self.FRAME_FILE_NAME = config['zm']['frame_jpg_path']
+        self.EVENTS_WINDOW_SECONDS = config['timings'].getint('events_window_seconds')
+
         self._resource_reader = resource_reader
 
     def _get_past_events_json(self, page: int) -> Dict:
-        events_fetch_from = datetime.now() - timedelta(seconds=EVENTS_WINDOW_SECONDS)
+        events_fetch_from = datetime.now() - timedelta(seconds=self.EVENTS_WINDOW_SECONDS)
 
         query = self.EVENT_LIST_URL.format(startTime=datetime.strftime(events_fetch_from, '%Y-%m-%d %H:%M:%S'),
                                            page=page)
@@ -108,14 +107,12 @@ class FrameReader:
 
 
 class FrameReaderWorker(Thread):
-    EVENT_LOOP_SECONDS = config['timings'].getint('event_loop_seconds')
-    FRAME_READ_DELAY_SECONDS = config['timings'].getint('frame_read_delay_seconds')
-
     log = logging.getLogger("events_processor.FrameReaderWorker")
 
     @inject
     @noninjectable('event_ids', 'skip_mailed')
     def __init__(self,
+                 config: Config,
                  frame_queue: FrameQueue,
                  system_time: SystemTime,
                  frame_reader: FrameReader,
@@ -123,12 +120,17 @@ class FrameReaderWorker(Thread):
                  skip_mailed: bool = False,
                  ):
         super().__init__()
+        self.EVENT_LOOP_SECONDS = config['timings'].getint('event_loop_seconds')
+        self.FRAME_READ_DELAY_SECONDS = config['timings'].getint('frame_read_delay_seconds')
+        self.EVENTS_WINDOW_SECONDS = config['timings'].getint('events_window_seconds')
+        self.CACHE_SECONDS_BUFFER = config['timings'].getint('cache_seconds_buffer')
+
         self._stop_requested = False
         self._system_time = system_time
 
         self._frame_queue = frame_queue
-        self._events_cache = TTLCache(maxsize=10000000, ttl=EVENTS_WINDOW_SECONDS + CACHE_SECONDS_BUFFER)
-        self._frames_cache = TTLCache(maxsize=10000000, ttl=EVENTS_WINDOW_SECONDS + CACHE_SECONDS_BUFFER)
+        self._events_cache = TTLCache(maxsize=10000000, ttl=self.EVENTS_WINDOW_SECONDS + self.CACHE_SECONDS_BUFFER)
+        self._frames_cache = TTLCache(maxsize=10000000, ttl=self.EVENTS_WINDOW_SECONDS + self.CACHE_SECONDS_BUFFER)
 
         self._frame_reader = frame_reader
         if event_ids:

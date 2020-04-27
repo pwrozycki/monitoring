@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from queue import Queue
 from threading import Lock
-from typing import Any, Sequence, Dict, Tuple, NewType
+from typing import Any, Sequence, Dict, Tuple, NewType, MutableMapping
 
 
 @dataclass
@@ -108,3 +108,4 @@ class ZoneInfo:
 
 NotificationQueue = NewType('NotificationQueue', Queue)
 FrameQueue = NewType('FrameQueue', Queue)
+Config = NewType('Config', MutableMapping)

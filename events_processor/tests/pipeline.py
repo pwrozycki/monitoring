@@ -78,7 +78,8 @@ def run_pipeline(detections=None,
                  zones: Iterable[ZoneInfo] = ()):
     reset_config()
     if config_updates:
-        events_processor.config.update(config_updates)
+        for (key, value) in config_updates.items():
+            events_processor.config[key].update(config_updates[key])
 
     detections = detections if detections else {0: [TestDetection(score=score, bounding_box=np.array([1, 1, 50, 50]))]}
 
