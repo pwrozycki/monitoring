@@ -8,7 +8,7 @@ import events_processor
 from events_processor.bindings import ProcessorModule
 from events_processor.controller import MainController
 from events_processor.interfaces import Detector, NotificationSender, ZoneReader, AlarmBoxReader, ResourceReader
-from events_processor.models import Detection, Rect, ZoneInfo
+from events_processor.models import Detection, Rect, ZoneInfo, Config
 from tests.bindings import TestOverridesModule
 
 
@@ -76,14 +76,14 @@ def run_pipeline(detections=None,
                  config_updates=None,
                  alarm_box=None,
                  zones: Iterable[ZoneInfo] = ()):
-    reset_config()
-    if config_updates:
-        for (key, value) in config_updates.items():
-            events_processor.config[key].update(config_updates[key])
-
     detections = detections if detections else {0: [TestDetection(score=score, bounding_box=np.array([1, 1, 50, 50]))]}
 
     injector = Injector([ProcessorModule, TestOverridesModule])
+
+    config = injector.get(Config)
+    if config_updates:
+        for (key, value) in config_updates.items():
+            config[key].update(config_updates[key])
 
     detector = injector.get(Detector)
     sender = injector.get(NotificationSender)

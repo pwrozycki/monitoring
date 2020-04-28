@@ -2,7 +2,7 @@ from queue import Queue
 
 from injector import Module, Binder, InstanceProvider
 
-from events_processor import config
+from events_processor.configtools import properties_config
 from events_processor.controller import MainController, DefaultSystemTime
 from events_processor.dataaccess import DBZoneReader, DBAlarmBoxReader
 from events_processor.detector import CoralDetector
@@ -24,7 +24,7 @@ class ProcessorModule(Module):
         binder.bind(DetectionFilter)
         binder.bind(RotatingPreprocessor)
 
-        binder.bind(Config, to=InstanceProvider(config))
+        binder.bind(Config, to=InstanceProvider(properties_config('events_processor.ini')))
 
         binder.bind(FrameReaderWorker)
         binder.bind(FrameProcessorWorker)
