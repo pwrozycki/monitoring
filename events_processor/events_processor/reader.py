@@ -7,11 +7,12 @@ from typing import Dict, Optional, Tuple, Iterable
 
 import requests
 from cachetools import TTLCache
-from injector import inject, noninjectable
+from injector import inject
 from requests import Response
 
+from events_processor.configtools import ConfigProvider
 from events_processor.interfaces import SystemTime, ResourceReader
-from events_processor.models import FrameInfo, EventInfo, FrameQueue, Config
+from events_processor.models import FrameInfo, EventInfo, FrameQueue
 
 
 class WebResourceReader(ResourceReader):
@@ -34,18 +35,14 @@ class FrameReader:
     @inject
     def __init__(self,
                  resource_reader: ResourceReader,
-                 config: Config):
-        self.EVENT_LIST_URL = config['zm']['event_list_url']
-        self.EVENT_DETAILS_URL = config['zm']['event_details_url']
-        self.FRAME_FILE_NAME = config['zm']['frame_jpg_path']
-        self.EVENTS_WINDOW_SECONDS = config['timings'].getint('events_window_seconds')
-
+                 config: ConfigProvider):
+        self._config = config
         self._resource_reader = resource_reader
 
     def _get_past_events_json(self, page: int) -> Dict:
-        events_fetch_from = datetime.now() - timedelta(seconds=self.EVENTS_WINDOW_SECONDS)
+        events_fetch_from = datetime.now() - timedelta(seconds=self._config.EVENTS_WINDOW_SECONDS)
 
-        query = self.EVENT_LIST_URL.format(startTime=datetime.strftime(events_fetch_from, '%Y-%m-%d %H:%M:%S'),
+        query = self._config.EVENT_LIST_URL.format(startTime=datetime.strftime(events_fetch_from, '%Y-%m-%d %H:%M:%S'),
                                            page=page)
         query = query.replace(' ', '%20')
 
@@ -55,7 +52,7 @@ class FrameReader:
         return {}
 
     def get_event_details_json(self, event_id: str) -> Optional[Tuple[Dict, Dict]]:
-        query = self.EVENT_DETAILS_URL.format(eventId=event_id)
+        query = self._config.EVENT_DETAILS_URL.format(eventId=event_id)
         response = self._resource_reader.read(query)
         if response:
             data = json.loads(response.content)['event']
@@ -97,7 +94,7 @@ class FrameReader:
                 yield FrameInfo(frame_json, file_name)
 
     def _get_frame_file_name(self, event_id: str, event_json: Dict, frame_id: str) -> str:
-        file_name = self.FRAME_FILE_NAME.format(
+        file_name = self._config.FRAME_FILE_NAME.format(
             monitorId=event_json['MonitorId'],
             startDay=event_json['StartTime'][:10],
             eventId=event_id,
@@ -110,41 +107,34 @@ class FrameReaderWorker(Thread):
     log = logging.getLogger("events_processor.FrameReaderWorker")
 
     @inject
-    @noninjectable('event_ids', 'skip_mailed')
     def __init__(self,
-                 config: Config,
+                 config: ConfigProvider,
                  frame_queue: FrameQueue,
                  system_time: SystemTime,
-                 frame_reader: FrameReader,
-                 event_ids: Optional[Iterable[str]] = None,
-                 skip_mailed: bool = False,
-                 ):
+                 frame_reader: FrameReader):
         super().__init__()
-        self.EVENT_LOOP_SECONDS = config['timings'].getint('event_loop_seconds')
-        self.FRAME_READ_DELAY_SECONDS = config['timings'].getint('frame_read_delay_seconds')
-        self.EVENTS_WINDOW_SECONDS = config['timings'].getint('events_window_seconds')
-        self.CACHE_SECONDS_BUFFER = config['timings'].getint('cache_seconds_buffer')
-
+        self._config = config
         self._stop_requested = False
         self._system_time = system_time
 
         self._frame_queue = frame_queue
-        self._events_cache = TTLCache(maxsize=10000000, ttl=self.EVENTS_WINDOW_SECONDS + self.CACHE_SECONDS_BUFFER)
-        self._frames_cache = TTLCache(maxsize=10000000, ttl=self.EVENTS_WINDOW_SECONDS + self.CACHE_SECONDS_BUFFER)
+        self._events_cache = TTLCache(maxsize=10000000, ttl=config.EVENTS_WINDOW_SECONDS + config.CACHE_SECONDS_BUFFER)
+        self._frames_cache = TTLCache(maxsize=10000000, ttl=config.EVENTS_WINDOW_SECONDS + config.CACHE_SECONDS_BUFFER)
 
         self._frame_reader = frame_reader
-        if event_ids:
-            self._events_iter = lambda: self._frame_reader.events_by_id_iter(event_ids)
+        if config.EVENT_IDS:
+            self._events_iter = lambda: self._frame_reader.events_by_id_iter(config.EVENT_IDS)
+            self._skip_mailed = False
         else:
             self._events_iter = self._frame_reader.events_iter
-        self._skip_mailed = skip_mailed
+            self._skip_mailed = True
 
     def run(self) -> None:
         while not self._stop_requested:
             before = time.monotonic()
             self._collect_events()
             time_spent = (time.monotonic() - before)
-            self._system_time.sleep(max(self.EVENT_LOOP_SECONDS - time_spent, 0))
+            self._system_time.sleep(max(self._config.EVENT_LOOP_SECONDS - time_spent, 0))
 
         self.log.info("Terminating")
 
@@ -174,7 +164,7 @@ class FrameReaderWorker(Thread):
                     continue
 
                 frame_time = datetime.strptime(frame_info.frame_json['TimeStamp'], '%Y-%m-%d %H:%M:%S')
-                if datetime.now() - frame_time < timedelta(seconds=self.FRAME_READ_DELAY_SECONDS):
+                if datetime.now() - frame_time < timedelta(seconds=self._config.FRAME_READ_DELAY_SECONDS):
                     frame_skipped = True
                     continue
 

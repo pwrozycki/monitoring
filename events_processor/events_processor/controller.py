@@ -3,9 +3,9 @@ import time
 
 from injector import inject, ProviderOf
 
+from events_processor.configtools import ConfigProvider
 from events_processor.detector import CoralDetector
 from events_processor.interfaces import Detector, SystemTime
-from events_processor.models import Config
 from events_processor.notifications import NotificationWorker
 from events_processor.processor import FrameProcessorWorker
 from events_processor.reader import FrameReaderWorker
@@ -16,18 +16,16 @@ class MainController:
 
     @inject
     def __init__(self,
-                 config: Config,
+                 config: ConfigProvider,
                  detector: Detector,
                  frame_reader_worker: FrameReaderWorker,
                  notification_worker: NotificationWorker,
                  frame_processor_worker_provider: ProviderOf[FrameProcessorWorker],
                  ):
-        self.FRAME_PROCESSING_THREADS = config['threading'].getint('frame_processing_threads')
-        self.THREAD_WATCHDOG_DELAY = config['threading'].getint('thread_watchdog_delay')
-
+        self._config = config
         self._detector = detector
         self._threads = [notification_worker, frame_reader_worker]
-        self._threads += [frame_processor_worker_provider.get() for a in range(self.FRAME_PROCESSING_THREADS)]
+        self._threads += [frame_processor_worker_provider.get() for a in range(config.FRAME_PROCESSING_THREADS)]
 
     def start(self, watchdog: bool = True) -> None:
         for thread in self._threads:
@@ -51,7 +49,7 @@ class MainController:
                 self.log.error("Pending processing is stuck, terminating")
                 break
 
-            time.sleep(self.THREAD_WATCHDOG_DELAY)
+            time.sleep(self._config.THREAD_WATCHDOG_DELAY)
 
     def _detector_is_stuck(self) -> bool:
         return isinstance(self._detector, CoralDetector) and self._detector.get_pending_processing_seconds() > 60

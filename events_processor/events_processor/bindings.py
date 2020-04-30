@@ -2,14 +2,14 @@ from queue import Queue
 
 from injector import Module, Binder, InstanceProvider
 
-from events_processor.configtools import properties_config
+from events_processor.configtools import ConfigProvider
 from events_processor.controller import MainController, DefaultSystemTime
 from events_processor.dataaccess import DBZoneReader, DBAlarmBoxReader
 from events_processor.detector import CoralDetector
 from events_processor.filters import DetectionFilter
 from events_processor.interfaces import Detector, NotificationSender, ImageReader, SystemTime, ZoneReader, \
     ResourceReader, AlarmBoxReader
-from events_processor.models import NotificationQueue, FrameQueue, Config
+from events_processor.models import NotificationQueue, FrameQueue
 from events_processor.notifications import MailNotificationSender, NotificationWorker
 from events_processor.preprocessor import RotatingPreprocessor
 from events_processor.processor import FSImageReader, FrameProcessorWorker
@@ -24,7 +24,7 @@ class ProcessorModule(Module):
         binder.bind(DetectionFilter)
         binder.bind(RotatingPreprocessor)
 
-        binder.bind(Config, to=InstanceProvider(properties_config('events_processor.ini')))
+        binder.bind(ConfigProvider, to=InstanceProvider(ConfigProvider('events_processor.ini')))
 
         binder.bind(FrameReaderWorker)
         binder.bind(FrameProcessorWorker)

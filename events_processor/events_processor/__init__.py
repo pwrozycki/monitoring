@@ -1,7 +1,5 @@
 import logging.config
 
-from configparser import ConfigParser, ExtendedInterpolation
-
 logging.config.fileConfig('events_processor.logging.conf')
 
 # TODO: prozycki: list:

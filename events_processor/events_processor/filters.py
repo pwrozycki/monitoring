@@ -6,9 +6,9 @@ from typing import Callable, Tuple, Dict, Iterable, Any, List
 from injector import inject
 from shapely import geometry
 
-from events_processor.configtools import set_config, get_config
+from events_processor.configtools import set_config, get_config, ConfigProvider
 from events_processor.interfaces import ZoneReader, AlarmBoxReader
-from events_processor.models import Point, FrameInfo, Detection, Rect, Config
+from events_processor.models import Point, FrameInfo, Detection, Rect
 from events_processor.preprocessor import RotatingPreprocessor
 
 INTERSECTION_DISCARDED_THRESHOLD = 1E-6
@@ -26,10 +26,8 @@ class DetectionFilter:
                  preprocessor: RotatingPreprocessor,
                  alarm_box_reader: AlarmBoxReader,
                  zone_reader: ZoneReader,
-                 config: Config):
-        self.OBJECT_LABELS = config['detection_filter']['object_labels'].split(',')
-        self.LABEL_FILE = config['detection_filter']['label_file']
-
+                 config: ConfigProvider):
+        self._config = config
         self._labels = self._read_labels()
         self._transform_coords = preprocessor.transform_coords
         self._alarm_box_reader = alarm_box_reader
@@ -80,7 +78,7 @@ class DetectionFilter:
             yield transform(e, next(i)).tuple
 
     def _read_labels(self) -> Dict[int, str]:
-        with open(self.LABEL_FILE, 'r', encoding="utf-8") as f:
+        with open(self._config.LABEL_FILE, 'r', encoding="utf-8") as f:
             lines = f.readlines()
         ret = {}
         for line in lines:
@@ -91,7 +89,7 @@ class DetectionFilter:
     def filter_detections(self, frame_info: FrameInfo):
         result = []
         for detection in frame_info.detections:
-            if self._labels[detection.label_id] in self.OBJECT_LABELS:
+            if self._labels[detection.label_id] in self._config.OBJECT_LABELS:
                 if self._frame_score_insufficient(detection, frame_info):
                     continue
 

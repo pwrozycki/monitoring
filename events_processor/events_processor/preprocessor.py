@@ -4,7 +4,8 @@ from typing import Tuple, Any
 import cv2
 from injector import inject
 
-from events_processor.models import FrameInfo, Point, Config
+from events_processor.configtools import ConfigProvider
+from events_processor.models import FrameInfo, Point
 
 
 # TODO: prozycki: refactor and move to separate classes: logic responsible for:
@@ -13,7 +14,7 @@ from events_processor.models import FrameInfo, Point, Config
 
 class RotatingPreprocessor:
     @inject
-    def __init__(self, config: Config):
+    def __init__(self, config: ConfigProvider):
         self._config_parse_rotations(config)
 
     def _config_parse_rotations(self, config) -> None:

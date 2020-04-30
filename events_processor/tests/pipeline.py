@@ -4,11 +4,11 @@ from typing import Iterable
 import numpy as np
 from injector import Injector
 
-import events_processor
 from events_processor.bindings import ProcessorModule
+from events_processor.configtools import ConfigProvider
 from events_processor.controller import MainController
 from events_processor.interfaces import Detector, NotificationSender, ZoneReader, AlarmBoxReader, ResourceReader
-from events_processor.models import Detection, Rect, ZoneInfo, Config
+from events_processor.models import Detection, Rect, ZoneInfo
 from tests.bindings import TestOverridesModule
 
 
@@ -62,12 +62,6 @@ class ResourceTemplate:
         }
 
 
-def reset_config():
-    for section in events_processor.config.sections():
-        events_processor.config.remove_section(section)
-    events_processor.read_config()
-
-
 def run_pipeline(detections=None,
                  score=0.8,
                  events=(ResourceTemplate.event_template(),),
@@ -80,7 +74,7 @@ def run_pipeline(detections=None,
 
     injector = Injector([ProcessorModule, TestOverridesModule])
 
-    config = injector.get(Config)
+    config = injector.get(ConfigProvider)
     if config_updates:
         for (key, value) in config_updates.items():
             config[key].update(config_updates[key])

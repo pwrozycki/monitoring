@@ -7,20 +7,19 @@ from typing import Any, Iterable
 
 from PIL import Image
 
-from events_processor.configtools import get_config, set_config
+from events_processor.configtools import get_config, set_config, ConfigProvider
 from events_processor.interfaces import Detector
-from events_processor.models import FrameInfo, Rect, Detection, Config
+from events_processor.models import FrameInfo, Rect, Detection
 
 
 class CoralDetector(Detector):
     log = logging.getLogger("events_processor.CoralDetector")
 
-    def __init__(self, config: Config):
-        self.MODEL_FILE = config['coral']['model_file']
-        self.MIN_SCORE = float(config['coral']['min_score'])
+    def __init__(self, config: ConfigProvider):
+        self._config = config
 
         from edgetpu.detection.engine import DetectionEngine
-        self._engine = DetectionEngine(self.MODEL_FILE)
+        self._engine = DetectionEngine(config.MODEL_FILE)
         self._engine_lock = Lock()
         self._pending_processing_start = None
 
@@ -64,7 +63,7 @@ class CoralDetector(Detector):
             self.log.debug(f"starting detection - frame: {frame_info}")
             self._pending_processing_start = time.monotonic()
             result = self._engine.DetectWithImage(cropped_img,
-                                                  threshold=self.MIN_SCORE,
+                                                  threshold=self._config.MIN_SCORE,
                                                   keep_aspect_ratio=True,
                                                   relative_coord=False, top_k=1000)
             self._pending_processing_start = None

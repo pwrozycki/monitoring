@@ -1,6 +1,5 @@
 import json
 import logging
-import re
 import smtplib
 import time
 from email.mime.image import MIMEImage
@@ -14,8 +13,9 @@ import cv2
 import requests
 from injector import inject
 
+from events_processor.configtools import ConfigProvider
 from events_processor.interfaces import NotificationSender, SystemTime
-from events_processor.models import EventInfo, NotificationQueue, Config
+from events_processor.models import EventInfo, NotificationQueue
 from events_processor.renderer import DetectionRenderer
 
 
@@ -23,16 +23,9 @@ class MailNotificationSender(NotificationSender):
     log = logging.getLogger('events_processor.MailNotificationSender')
 
     def __init__(self,
-                 config: Config,
+                 config: ConfigProvider,
                  event_updater: 'EventUpdater'):
-        self.HOST = config['mail']['host']
-        self.PORT = int(config['mail']['port'])
-        self.USER = config['mail']['user']
-        self.PASSWORD = config['mail']['password']
-        self.TO_ADDR = config['mail']['to_addr']
-        self.FROM_ADDR = config['mail']['from_addr']
-        self.TIMEOUT = float(config['mail']['timeout'])
-
+        self._config = config
         self._event_updater = event_updater
 
     def send(self, event_info: EventInfo, subject: str, message: str) -> bool:
@@ -47,12 +40,12 @@ class MailNotificationSender(NotificationSender):
         msg.attach(image)
 
         try:
-            s = smtplib.SMTP(self.HOST, self.PORT, timeout=self.TIMEOUT)
+            s = smtplib.SMTP(self._config.HOST, self._config.PORT, timeout=self._config.TIMEOUT)
             s.ehlo()
             s.starttls()
             s.ehlo()
-            s.login(self.USER, self.PASSWORD)
-            s.sendmail(self.FROM_ADDR, self.TO_ADDR, msg.as_string())
+            s.login(self._config.USER, self._config.PASSWORD)
+            s.sendmail(self._config.FROM_ADDR, self._config.TO_ADDR, msg.as_string())
             s.quit()
 
             return self._event_updater.update_event(event_info, Emailed=1)
@@ -78,12 +71,12 @@ class FSNotificationSender:
 class EventUpdater:
     log = logging.getLogger('events_processor.EventUpdater')
 
-    def __init__(self, config: Config):
-        self.EVENT_DETAILS_URL = config['zm']['event_details_url']
+    def __init__(self, config: ConfigProvider):
+        self._config = config
 
     def update_event(self, event_info: EventInfo, **update_spec) -> bool:
         try:
-            url = self.EVENT_DETAILS_URL.format(eventId=event_info.event_json['Id'])
+            url = self._config.EVENT_DETAILS_URL.format(eventId=event_info.event_json['Id'])
             mark_as_mailed_json = {'Event': update_spec}
             response = requests.post(url, json=mark_as_mailed_json)
             response_json = json.loads(response.content)
@@ -99,10 +92,8 @@ class DetectionNotifier:
     @inject
     def __init__(self,
                  notification_sender: NotificationSender,
-                 config: Config):
-        self.SUBJECT = config['mail']['subject']
-        self.MESSAGE = re.sub(r'\n\|', '\n', config['mail']['message'])
-
+                 config: ConfigProvider):
+        self._config = config
         self._notification_sender = notification_sender
 
     def notify(self, event_info: EventInfo) -> bool:
@@ -110,8 +101,8 @@ class DetectionNotifier:
         mail_dict.update({f"Frame-{x}": y for (x, y) in event_info.frame_info.frame_json.items()})
         mail_dict['Detection-Score'] = 100 * event_info.frame_score
 
-        subject = self.SUBJECT.format(**mail_dict)
-        message = self.MESSAGE.format(**mail_dict)
+        subject = self._config.SUBJECT.format(**mail_dict)
+        message = self._config.MESSAGE.format(**mail_dict)
 
         return self._notification_sender.send(event_info, subject, message)
 
@@ -121,14 +112,12 @@ class NotificationWorker(Thread):
 
     @inject
     def __init__(self,
-                 notification_sender: NotificationSender,
                  notification_queue: NotificationQueue,
                  detection_notifier: DetectionNotifier,
                  system_time: SystemTime,
-                 config: Config):
+                 config: ConfigProvider):
         super().__init__()
-        self.NOTIFICATION_DELAY_SECONDS = config['timings'].getint('notification_delay_seconds')
-
+        self._config = config
         self._stop_requested = False
         self._system_time = system_time
 
@@ -140,7 +129,7 @@ class NotificationWorker(Thread):
 
     def _set_notification_time(self, event_info: EventInfo) -> None:
         with event_info.lock:
-            delay = event_info.first_detection_time + self.NOTIFICATION_DELAY_SECONDS - time.monotonic()
+            delay = event_info.first_detection_time + self._config.NOTIFICATION_DELAY_SECONDS - time.monotonic()
             notification_delay = max(delay, 0)
             event_info.planned_notification = time.monotonic() + notification_delay
 

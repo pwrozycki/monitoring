@@ -3,15 +3,16 @@ from typing import Callable, Any, Dict, Iterable
 import mysql.connector
 from mysql.connector import Error
 
+from events_processor.configtools import ConfigProvider
 from events_processor.interfaces import ZoneReader, AlarmBoxReader
-from events_processor.models import ZoneInfo, Rect, Config
+from events_processor.models import ZoneInfo, Rect
 
 _CONN_POOL_DEFAULTS = {'pool_size': 8,
                        'pool_name': "mysql_conn_pool"}
 
 
 class QuerySupport:
-    def __init__(self, config: Config):
+    def __init__(self, config: ConfigProvider):
         self._config = config
 
     def _db_config(self, int_keywords: Iterable[str] = ('pool_size',)) -> Dict:
@@ -38,13 +39,12 @@ class QuerySupport:
 
 
 class DBAlarmBoxReader(AlarmBoxReader, QuerySupport):
-    def __init__(self, config: Config):
+    def __init__(self, config: ConfigProvider):
         super(QuerySupport, self).__init__(config)
-        self.EXCLUDED_ZONE_PREFIX = config['detection_filter']['excluded_zone_prefix']
 
     def read(self, event_id: str,
              frame_id: str) -> Rect:
-        def query(self, cursor):
+        def query(cursor):
             cursor.execute(
                 """select st.MinX, st.MinY, st.MaxX, st.MaxY 
                      from Stats st
@@ -53,26 +53,24 @@ class DBAlarmBoxReader(AlarmBoxReader, QuerySupport):
                       and zn.Name not like concat(%(prefix)s, '%')""",
                 {'eventId': event_id,
                  'frameId': frame_id,
-                 'prefix': self.EXCLUDED_ZONE_PREFIX})
+                 'prefix': self._config.EXCLUDED_ZONE_PREFIX})
             return cursor.fetchone()
 
         return Rect(*self.invoke_query(query))
 
 
 class DBZoneReader(ZoneReader, QuerySupport):
-    def __init__(self, config: Config):
+    def __init__(self, config: ConfigProvider):
         super(QuerySupport, self).__init__(config)
-        self.EXCLUDED_ZONE_PREFIX = config['detection_filter']['excluded_zone_prefix']
-
 
     def read(self) -> Iterable[ZoneInfo]:
-        def query(self, cursor):
+        def query(cursor):
             cursor.execute(
                 """select m.Id, m.Width, m.Height, z.Name, z.Coords 
                    from Zones z
                    join Monitors m on m.Id = z.MonitorId
                    where z.Name like concat(%(prefix)s, '%')""",
-                {'prefix': self.EXCLUDED_ZONE_PREFIX})
+                {'prefix': self._config.EXCLUDED_ZONE_PREFIX})
             return cursor.fetchall()
 
         return [ZoneInfo(str(m_id), int(w), int(h), name, coords) for (m_id, w, h, name, coords) in
