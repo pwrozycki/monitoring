@@ -6,6 +6,7 @@ from threading import Lock
 from typing import Any, Iterable
 
 from PIL import Image
+from injector import inject
 
 from events_processor.configtools import get_config, set_config, ConfigProvider
 from events_processor.interfaces import Detector
@@ -15,6 +16,7 @@ from events_processor.models import FrameInfo, Rect, Detection
 class CoralDetector(Detector):
     log = logging.getLogger("events_processor.CoralDetector")
 
+    @inject
     def __init__(self, config: ConfigProvider):
         self._config = config
 
@@ -58,20 +60,17 @@ class CoralDetector(Detector):
 
     def detect_in_rect(self, frame_info: FrameInfo, img: Any, rect: Rect):
         cropped_img = img.crop(rect.box_tuple)
-        self.log.debug(f"waiting for lock - frame: {frame_info}")
         with self._engine_lock:
-            self.log.debug(f"starting detection - frame: {frame_info}")
             self._pending_processing_start = time.monotonic()
             result = self._engine.DetectWithImage(cropped_img,
                                                   threshold=self._config.MIN_SCORE,
                                                   keep_aspect_ratio=True,
                                                   relative_coord=False, top_k=1000)
             self._pending_processing_start = None
-            self.log.debug(f"detection done - frame: {frame_info}")
 
         detections = []
         for detection in result:
-            r = Rect(*detection.bounding_box.flatten().tolist())
+            r = Rect(*map(int, detection.bounding_box.flatten().tolist()))
             d = Detection(r.moved_by(rect.left, rect.top), detection.score, detection.label_id)
             detections.append(d)
 

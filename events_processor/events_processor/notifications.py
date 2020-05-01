@@ -22,6 +22,7 @@ from events_processor.renderer import DetectionRenderer
 class MailNotificationSender(NotificationSender):
     log = logging.getLogger('events_processor.MailNotificationSender')
 
+    @inject
     def __init__(self,
                  config: ConfigProvider,
                  event_updater: 'EventUpdater'):
@@ -71,6 +72,7 @@ class FSNotificationSender:
 class EventUpdater:
     log = logging.getLogger('events_processor.EventUpdater')
 
+    @inject
     def __init__(self, config: ConfigProvider):
         self._config = config
 

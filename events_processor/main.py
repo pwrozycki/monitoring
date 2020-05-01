@@ -3,8 +3,8 @@ from argparse import ArgumentParser
 from injector import Injector
 
 from events_processor.bindings import ProcessorModule
+from events_processor.configtools import ConfigProvider
 from events_processor.controller import MainController
-from events_processor.models import Config
 
 
 def main():
@@ -20,8 +20,8 @@ def main():
 
     injector = Injector([ProcessorModule])
     if args.event_ids:
-        config = injector.get(Config)
-        config.setdefault('debug', {})['event_ids'] = args.event_ids
+        config = injector.get(ConfigProvider)
+        config['debug']['event_ids'] = args.event_ids
     controller = injector.get(MainController)
     controller.start()
 

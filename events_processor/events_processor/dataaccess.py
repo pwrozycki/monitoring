@@ -1,6 +1,7 @@
-from typing import Callable, Any, Dict, Iterable
+from typing import Callable, Any, Dict, Iterable, Optional
 
 import mysql.connector
+from injector import inject
 from mysql.connector import Error
 
 from events_processor.configtools import ConfigProvider
@@ -39,11 +40,12 @@ class QuerySupport:
 
 
 class DBAlarmBoxReader(AlarmBoxReader, QuerySupport):
+    @inject
     def __init__(self, config: ConfigProvider):
-        super(QuerySupport, self).__init__(config)
+        QuerySupport.__init__(self, config)
 
     def read(self, event_id: str,
-             frame_id: str) -> Rect:
+             frame_id: str) -> Optional[Rect]:
         def query(cursor):
             cursor.execute(
                 """select st.MinX, st.MinY, st.MaxX, st.MaxY 
@@ -56,12 +58,14 @@ class DBAlarmBoxReader(AlarmBoxReader, QuerySupport):
                  'prefix': self._config.EXCLUDED_ZONE_PREFIX})
             return cursor.fetchone()
 
-        return Rect(*self.invoke_query(query))
+        res = self.invoke_query(query)
+        return Rect(*res) if res else None
 
 
 class DBZoneReader(ZoneReader, QuerySupport):
+    @inject
     def __init__(self, config: ConfigProvider):
-        super(QuerySupport, self).__init__(config)
+        QuerySupport.__init__(self, config)
 
     def read(self) -> Iterable[ZoneInfo]:
         def query(cursor):
