@@ -25,7 +25,7 @@ class MainController:
         self._config = config
         self._detector = detector
         self._threads = [notification_worker, frame_reader_worker]
-        self._threads += [frame_processor_worker_provider.get() for a in range(config.FRAME_PROCESSING_THREADS)]
+        self._threads += [frame_processor_worker_provider.get() for _ in range(config.FRAME_PROCESSING_THREADS)]
 
     def start(self, watchdog: bool = True) -> None:
         for thread in self._threads:

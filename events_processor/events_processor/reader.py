@@ -43,7 +43,7 @@ class FrameReader:
         events_fetch_from = datetime.now() - timedelta(seconds=self._config.EVENTS_WINDOW_SECONDS)
 
         query = self._config.EVENT_LIST_URL.format(startTime=datetime.strftime(events_fetch_from, '%Y-%m-%d %H:%M:%S'),
-                                           page=page)
+                                                   page=page)
         query = query.replace(' ', '%20')
 
         response = self._resource_reader.read(query)
