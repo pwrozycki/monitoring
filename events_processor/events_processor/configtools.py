@@ -14,16 +14,23 @@ def get_config(config_map: Dict,
     return default
 
 
-def set_config(key: str,
-               value: str,
-               config_key: str,
-               dictionary: Dict[str, Any],
-               transform: Callable[[str], Any]):
+def _set_config(key: str,
+                value: str,
+                config_key: str,
+                dictionary: Dict[str, Any],
+                transform: Callable[[str], Any]):
     m = re.match(config_key + r'(\d*)', key)
     if m:
         monitor_id = m.group(1)
         k = monitor_id if monitor_id else 'default'
         dictionary[k] = transform(value)
+
+
+def extract_config(conf, section, config_key, transform):
+    d = {}
+    for (key, value) in conf[section].items():
+        _set_config(key, value, config_key, d, transform)
+    return d
 
 
 class ConfigProvider(ConfigParser):

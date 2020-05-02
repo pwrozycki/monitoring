@@ -1,22 +1,17 @@
 import logging
 import re
-from collections import namedtuple
-from typing import Callable, Tuple, Dict, Iterable, Any, List
+from typing import Dict, Iterable
 
 from injector import inject
 from shapely import geometry
 
-from events_processor.configtools import set_config, get_config, ConfigProvider
+from events_processor.configtools import get_config, ConfigProvider, extract_config
 from events_processor.interfaces import ZoneReader, AlarmBoxReader
-from events_processor.models import Point, FrameInfo, Detection, Rect
+from events_processor.models import Point, FrameInfo, Detection, Rect, ZonePolygon, Polygon, ZoneInfo
 from events_processor.preprocessor import RotatingPreprocessor
 
 INTERSECTION_DISCARDED_THRESHOLD = 1E-6
 
-ZonePolygon = namedtuple('ZonePolygon', ['name', 'polygon'])
-
-
-# TODO: prozycki: move config read logic to external class
 
 class DetectionFilter:
     log = logging.getLogger('events_processor.DetectionFilter')
@@ -36,46 +31,36 @@ class DetectionFilter:
         self._config_parse()
 
     def _config_parse(self) -> None:
-        self._excluded_points: Dict[str, Any] = {}
-        self._excluded_polygons: Dict[str, Any] = {}
-        self._excluded_zone_polygons: Dict[str, List[ZonePolygon]] = {}
-        self._movement_indifferent_min_score: Dict[str, float] = {}
-        self._coarse_movement_min_score: Dict[str, float] = {}
-        self._precise_movement_min_score: Dict[str, float] = {}
-        self._max_movement_to_intersection_ratio: Dict[str, float] = {}
-        self._min_box_area_percentage: Dict[str, float] = {}
-        self._max_box_area_percentage: Dict[str, float] = {}
+        self._movement_indifferent_min_score = \
+            extract_config(self._config, 'detection_filter', 'movement_indifferent_min_score', float)
+        self._coarse_movement_min_score = \
+            extract_config(self._config, 'detection_filter', 'coarse_movement_min_score', float)
+        self._precise_movement_min_score = \
+            extract_config(self._config, 'detection_filter', 'precise_movement_min_score', float)
+        self._max_movement_to_intersection_ratio = \
+            extract_config(self._config, 'detection_filter', 'max_movement_to_intersection_ratio', float)
+        self._min_box_area_percentage = \
+            extract_config(self._config, 'detection_filter', 'min_box_area_percentage', float)
+        self._max_box_area_percentage = \
+            extract_config(self._config, 'detection_filter', 'max_box_area_percentage', float)
+        self._excluded_points = \
+            extract_config(self._config, 'detection_filter', 'excluded_points', self._coords_to_points)
+        self._excluded_polygons = \
+            extract_config(self._config, 'detection_filter', 'excluded_polygons', self._coords_to_polygons)
 
-        for (key, value) in self._config['detection_filter'].items():
-            set_config(key, value, 'movement_indifferent_min_score', self._movement_indifferent_min_score, float)
-            set_config(key, value, 'coarse_movement_min_score', self._coarse_movement_min_score, float)
-            set_config(key, value, 'precise_movement_min_score', self._precise_movement_min_score, float)
-            set_config(key, value, 'max_movement_to_intersection_ratio', self._max_movement_to_intersection_ratio,
-                       float)
-            set_config(key, value, 'min_box_area_percentage', self._min_box_area_percentage, float)
-            set_config(key, value, 'max_box_area_percentage', self._max_box_area_percentage, float)
-            set_config(key, value, 'excluded_points', self._excluded_points, self._coords_to_points)
-            set_config(key, value, 'excluded_polygons', self._excluded_polygons, self._coords_to_polygons)
-
+        self._excluded_zone_polygons = {}
         for zone in self._zone_reader.read():
-            def transform(x: int, y: int) -> Point:
-                return self._transform_coords(zone.monitor_id, zone.width, zone.height, Point(x, y))
+            polys = self._coords_to_polygons(zone.coords.replace(' ', ','))
+            zone_polys = [ZonePolygon(zone, poly) for poly in polys]
+            self._excluded_zone_polygons.setdefault(zone.monitor_id, []).extend(zone_polys)
 
-            polygons = self._coords_to_polygons(zone.coords.replace(' ', ','), transform=transform)
-            self._excluded_zone_polygons.setdefault(zone.monitor_id, []).append(ZonePolygon(zone.name, polygons[0]))
+    def _coords_to_points(self, string) -> Iterable[Point]:
+        return [Point(*map(int, m.groups())) for m in re.finditer(r'(\d+),(\d+)', string)]
 
-    def _coords_to_points(self, string):
-        return [geometry.Point(*map(int, m.groups())) for m in re.finditer(r'(\d+),(\d+)', string)]
-
-    def _coords_to_polygons(self, string, transform: Callable[[int, int], Point] = lambda x, y: Point(x, y)):
+    def _coords_to_polygons(self, string) -> Iterable[Polygon]:
         polygon_pattern = rf'((?:\d+,\d+,?)+)'
-        return [geometry.Polygon(list(self._transformed_points(m.group(0), transform)))
+        return [Polygon(self._coords_to_points(m.group(0)))
                 for m in re.finditer(polygon_pattern, string)]
-
-    def _transformed_points(self, lst, transform: Callable[[int, int], Point]) -> Iterable[Tuple[int, int]]:
-        i = iter(int(x) for x in lst.split(','))
-        for e in i:
-            yield transform(e, next(i)).tuple
 
     def _read_labels(self) -> Dict[int, str]:
         with open(self._config.LABEL_FILE, 'r', encoding="utf-8") as f:
@@ -89,26 +74,28 @@ class DetectionFilter:
     def filter_detections(self, frame_info: FrameInfo):
         result = []
         for detection in frame_info.detections:
-            if self._labels[detection.label_id] in self._config.OBJECT_LABELS:
-                if self._frame_score_insufficient(detection, frame_info):
-                    continue
+            if not self._labels[detection.label_id] in self._config.OBJECT_LABELS:
+                continue
 
-                if self._detection_contains_excluded_point(detection.rect, frame_info):
-                    continue
+            if self._frame_score_insufficient(detection, frame_info):
+                continue
 
-                if self._detection_intersects_excluded_polygon(detection.rect, frame_info):
-                    continue
+            if self._detection_contains_excluded_point(detection.rect, frame_info):
+                continue
 
-                if self._detection_intersects_excluded_polygon(detection.rect, frame_info):
-                    continue
+            if self._detection_intersects_excluded_polygon(detection.rect, frame_info):
+                continue
 
-                if self._detection_intersects_excluded_zone_polygon(detection.rect, frame_info):
-                    continue
+            if self._detection_intersects_excluded_polygon(detection.rect, frame_info):
+                continue
 
-                if self._detection_area_not_in_range(detection.rect, frame_info):
-                    continue
+            if self._detection_intersects_excluded_zone_polygon(detection.rect, frame_info):
+                continue
 
-                result.append(detection)
+            if self._detection_area_not_in_range(detection.rect, frame_info):
+                continue
+
+            result.append(detection)
 
         self.log.debug(f"Frame {frame_info} has {len(result)} accepted detections")
         frame_info.detections = result
@@ -170,12 +157,11 @@ class DetectionFilter:
         monitor_id = frame_info.event_info.event_json['MonitorId']
         detection_box = geometry.box(*box.box_tuple)
 
-        excluded_polygons = self._excluded_polygons.get(monitor_id)
-        if excluded_polygons:
-            polygons: Iterable[Any] = tuple(filter(detection_box.intersects, excluded_polygons))
-            if polygons:
-                self.log.debug(f"Detection discarded frame {frame_info}, {box} intersects one of excluded polygons")
-                return True
+        excluded_polygons = self._excluded_polygons.get(monitor_id, [])
+        shapely_polygons = [poly.shapely_poly for poly in excluded_polygons]
+        if tuple(filter(detection_box.intersects, shapely_polygons)):
+            self.log.debug(f"Detection discarded frame {frame_info}, {box} intersects one of excluded polygons")
+            return True
 
         return False
 
@@ -183,26 +169,28 @@ class DetectionFilter:
         monitor_id = frame_info.event_info.event_json['MonitorId']
         detection_box = geometry.box(*box.box_tuple)
 
-        polygons = self._excluded_zone_polygons.get(monitor_id, [])
-        if polygons:
-            for poly in polygons:
-                if detection_box.intersects(poly.polygon):
-                    self.log.debug(
-                        f"Detection discarded frame {frame_info}, {box} intersects excluded polygon: {poly.name}")
-                    return True
+        zone_polygons = self._excluded_zone_polygons.get(monitor_id, [])
+        for zone_poly in zone_polygons:
+            polygon = self._transformed_poly(zone_poly.zone, zone_poly.polygon)
+            if detection_box.intersects(polygon.shapely_poly):
+                self.log.debug(
+                    f"Detection discarded frame {frame_info}, {box} intersects excluded polygon: {zone_poly.zone.name}")
+                return True
 
         return False
+
+    def _transformed_poly(self, zone: ZoneInfo, poly: Polygon):
+        return Polygon(self._transform_coords(zone.monitor_id, zone.width, zone.height, pt) for pt in poly.points)
 
     def _detection_contains_excluded_point(self, box: Rect, frame_info: FrameInfo) -> bool:
         monitor_id = frame_info.event_info.event_json['MonitorId']
         detection_box = geometry.box(*box.box_tuple)
 
         excluded_points = self._excluded_points.get(monitor_id, [])
-        if excluded_points:
-            points: Iterable[Any] = tuple(filter(detection_box.contains, excluded_points))
-            if points:
-                self.log.debug(f"Detection discarded frame {frame_info}, {box} contains one of excluded points")
-                return True
+        geom_points = [p.shapely_point for p in excluded_points]
+        if tuple(filter(detection_box.contains, geom_points)):
+            self.log.debug(f"Detection discarded frame {frame_info}, {box} contains one of excluded points")
+            return True
         return False
 
     def _frame_area(self, frame_info: FrameInfo) -> int:

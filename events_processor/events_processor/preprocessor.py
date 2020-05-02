@@ -1,10 +1,9 @@
-import re
 from typing import Tuple, Any
 
 import cv2
 from injector import inject
 
-from events_processor.configtools import ConfigProvider
+from events_processor.configtools import ConfigProvider, extract_config
 from events_processor.models import FrameInfo, Point
 
 
@@ -15,18 +14,11 @@ from events_processor.models import FrameInfo, Point
 class RotatingPreprocessor:
     @inject
     def __init__(self, config: ConfigProvider):
-        self._config_parse_rotations(config)
-
-    def _config_parse_rotations(self, config) -> None:
-        self._rotations = {}
-        for (key, value) in config['rotating_preprocessor'].items():
-            match = re.match(r'rotate(\d+)', key)
-            if match:
-                self._rotations[match.group(1)] = value
+        self._rotations = extract_config(config, 'rotating_preprocessor', 'rotate', int)
 
     def preprocess(self, frame_info: FrameInfo) -> None:
         monitor_id = frame_info.event_info.event_json['MonitorId']
-        rotation = int(self._rotations.get(monitor_id, '0'))
+        rotation = self._rotations.get(monitor_id, 0)
         if rotation != 0:
             frame_info.image = self.rotate_and_expand_image(frame_info.image, rotation)
 
@@ -39,7 +31,7 @@ class RotatingPreprocessor:
             cv2.warpAffine(cv2.UMat(mat), rotation_mat, (bound_w, bound_h), flags=cv2.INTER_CUBIC))
 
     def transform_coords(self, monitor_id: str, w: int, h: int, point: Point) -> Point:
-        angle = int(self._rotations.get(monitor_id, '0'))
+        angle = self._rotations.get(monitor_id, 0)
         if angle == 0:
             return point
         rotation_matrix = self._get_rotation_matrix(angle, w, h)[2]

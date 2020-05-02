@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field
 from queue import Queue
 from threading import Lock
-from typing import Any, Sequence, Dict, Tuple, NewType, MutableMapping
+from typing import Any, Sequence, Dict, Tuple, NewType, MutableMapping, Iterable
+
+from shapely import geometry
 
 
 @dataclass
@@ -15,6 +17,10 @@ class Point:
 
     def moved_by(self, x, y) -> 'Point':
         return Point(self.x + x, self.y + y)
+
+    @property
+    def shapely_point(self):
+        return geometry.Point(self.tuple)
 
 
 @dataclass
@@ -62,6 +68,15 @@ class Rect:
 
 
 @dataclass
+class Polygon:
+    points: Iterable[Point]
+
+    @property
+    def shapely_poly(self):
+        return geometry.Polygon(p.tuple for p in self.points)
+
+
+@dataclass
 class Detection:
     rect: Rect
     score: float
@@ -104,6 +119,12 @@ class ZoneInfo:
     height: int
     name: str
     coords: str
+
+
+@dataclass
+class ZonePolygon:
+    zone: ZoneInfo
+    polygon: Polygon
 
 
 NotificationQueue = NewType('NotificationQueue', Queue)

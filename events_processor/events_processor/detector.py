@@ -8,7 +8,7 @@ from typing import Any, Iterable
 from PIL import Image
 from injector import inject
 
-from events_processor.configtools import get_config, set_config, ConfigProvider
+from events_processor.configtools import get_config, ConfigProvider, extract_config
 from events_processor.interfaces import Detector
 from events_processor.models import FrameInfo, Rect, Detection
 
@@ -25,9 +25,7 @@ class CoralDetector(Detector):
         self._engine_lock = Lock()
         self._pending_processing_start = None
 
-        self._detection_chunks = {}
-        for (key, value) in config['coral'].items():
-            set_config(key, value, 'detection_chunks', self._detection_chunks, self._extract_int_pair)
+        self._detection_chunks = extract_config(self._config, 'coral', 'detection_chunks', self._extract_int_pair)
 
     def _extract_int_pair(self, value: str) -> Iterable[int]:
         m = re.search(r'(\d+)x(\d+)', value)
