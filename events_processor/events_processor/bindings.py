@@ -10,7 +10,7 @@ from events_processor.filters import DetectionFilter
 from events_processor.interfaces import Detector, NotificationSender, ImageReader, SystemTime, ZoneReader, \
     ResourceReader, AlarmBoxReader
 from events_processor.models import NotificationQueue, FrameQueue
-from events_processor.notifications import MailNotificationSender, NotificationWorker
+from events_processor.notifications import MailNotificationSender, NotificationWorker, FSNotificationSender
 from events_processor.preprocessor import RotatingPreprocessor
 from events_processor.processor import FSImageReader, FrameProcessorWorker
 from events_processor.reader import FrameReader, WebResourceReader, FrameReaderWorker
@@ -40,3 +40,8 @@ class ProcessorModule(Module):
         binder.bind(ZoneReader, to=DBZoneReader)
         binder.bind(ResourceReader, to=WebResourceReader)
         binder.bind(AlarmBoxReader, to=DBAlarmBoxReader)
+
+
+class FSNotificationSenderOverride(Module):
+    def configure(self, binder: Binder) -> None:
+        binder.bind(NotificationSender, to=FSNotificationSender)

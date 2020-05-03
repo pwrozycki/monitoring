@@ -55,13 +55,10 @@ class MailNotificationSender(NotificationSender):
         return False
 
 
-class FSNotificationSender:
+class FSNotificationSender(NotificationSender):
     log = logging.getLogger('events_processor.FSNotificationSender')
 
-    def __init__(self):
-        super().__init__()
-
-    def send_notification(self, event_info: EventInfo, subject: str, message: str) -> bool:
+    def send(self, event_info: EventInfo, subject: str, message: str) -> bool:
         frame_info = event_info.frame_info
         cv2.imwrite("mailed_{EventId}_{FrameId}.jpg".format(**frame_info.frame_json), frame_info.image)
         self.log.info(f"Notification subject: {subject}")
