@@ -78,6 +78,7 @@ def run_pipeline(detections=None,
     if config_updates:
         for (key, value) in config_updates.items():
             config[key].update(config_updates[key])
+        config.reread()
 
     detector = injector.get(Detector)
     sender = injector.get(NotificationSender)

@@ -14,11 +14,11 @@ from events_processor.models import FrameInfo, Point
 class RotatingPreprocessor:
     @inject
     def __init__(self, config: ConfigProvider):
-        self._rotations = extract_config(config, 'rotating_preprocessor', 'rotate', int)
+        self._config = config
 
     def preprocess(self, frame_info: FrameInfo) -> None:
         monitor_id = frame_info.event_info.event_json['MonitorId']
-        rotation = self._rotations.get(monitor_id, 0)
+        rotation = self._config.rotations.get(monitor_id, 0)
         if rotation != 0:
             frame_info.image = self.rotate_and_expand_image(frame_info.image, rotation)
 
@@ -31,7 +31,7 @@ class RotatingPreprocessor:
             cv2.warpAffine(cv2.UMat(mat), rotation_mat, (bound_w, bound_h), flags=cv2.INTER_CUBIC))
 
     def transform_coords(self, monitor_id: str, w: int, h: int, point: Point) -> Point:
-        angle = self._rotations.get(monitor_id, 0)
+        angle = self._config.rotations.get(monitor_id, 0)
         if angle == 0:
             return point
         rotation_matrix = self._get_rotation_matrix(angle, w, h)[2]

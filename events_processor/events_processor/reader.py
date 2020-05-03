@@ -40,9 +40,9 @@ class FrameReader:
         self._resource_reader = resource_reader
 
     def _get_past_events_json(self, page: int) -> Dict:
-        events_fetch_from = datetime.now() - timedelta(seconds=self._config.EVENTS_WINDOW_SECONDS)
+        events_fetch_from = datetime.now() - timedelta(seconds=self._config.events_window_seconds)
 
-        query = self._config.EVENT_LIST_URL.format(startTime=datetime.strftime(events_fetch_from, '%Y-%m-%d %H:%M:%S'),
+        query = self._config.event_list_url.format(startTime=datetime.strftime(events_fetch_from, '%Y-%m-%d %H:%M:%S'),
                                                    page=page)
         query = query.replace(' ', '%20')
 
@@ -52,7 +52,7 @@ class FrameReader:
         return {}
 
     def get_event_details_json(self, event_id: str) -> Optional[Tuple[Dict, Dict]]:
-        query = self._config.EVENT_DETAILS_URL.format(eventId=event_id)
+        query = self._config.event_details_url.format(eventId=event_id)
         response = self._resource_reader.read(query)
         if response:
             data = json.loads(response.content)['event']
@@ -90,11 +90,11 @@ class FrameReader:
             for frame_json in frames_json:
                 frame_id = frame_json['FrameId']
 
-                file_name = self._get_frame_file_name(event_id, event_json, frame_id)
+                file_name = self._get_frame_jpg_path(event_id, event_json, frame_id)
                 yield FrameInfo(frame_json, file_name)
 
-    def _get_frame_file_name(self, event_id: str, event_json: Dict, frame_id: str) -> str:
-        file_name = self._config.FRAME_FILE_NAME.format(
+    def _get_frame_jpg_path(self, event_id: str, event_json: Dict, frame_id: str) -> str:
+        file_name = self._config.frame_jpg_path.format(
             monitorId=event_json['MonitorId'],
             startDay=event_json['StartTime'][:10],
             eventId=event_id,
@@ -118,12 +118,12 @@ class FrameReaderWorker(Thread):
         self._system_time = system_time
 
         self._frame_queue = frame_queue
-        self._events_cache = TTLCache(maxsize=10000000, ttl=config.EVENTS_WINDOW_SECONDS + config.CACHE_SECONDS_BUFFER)
-        self._frames_cache = TTLCache(maxsize=10000000, ttl=config.EVENTS_WINDOW_SECONDS + config.CACHE_SECONDS_BUFFER)
+        self._events_cache = TTLCache(maxsize=10000000, ttl=config.events_window_seconds + config.cache_seconds_buffer)
+        self._frames_cache = TTLCache(maxsize=10000000, ttl=config.events_window_seconds + config.cache_seconds_buffer)
 
         self._frame_reader = frame_reader
-        if config.EVENT_IDS:
-            self._events_iter = lambda: self._frame_reader.events_by_id_iter(config.EVENT_IDS)
+        if config.event_ids:
+            self._events_iter = lambda: self._frame_reader.events_by_id_iter(config.event_ids)
             self._skip_mailed = False
         else:
             self._events_iter = self._frame_reader.events_iter
@@ -134,7 +134,7 @@ class FrameReaderWorker(Thread):
             before = time.monotonic()
             self._collect_events()
             time_spent = (time.monotonic() - before)
-            self._system_time.sleep(max(self._config.EVENT_LOOP_SECONDS - time_spent, 0))
+            self._system_time.sleep(max(self._config.event_loop_seconds - time_spent, 0))
 
         self.log.info("Terminating")
 
@@ -164,7 +164,7 @@ class FrameReaderWorker(Thread):
                     continue
 
                 frame_time = datetime.strptime(frame_info.frame_json['TimeStamp'], '%Y-%m-%d %H:%M:%S')
-                if datetime.now() - frame_time < timedelta(seconds=self._config.FRAME_READ_DELAY_SECONDS):
+                if datetime.now() - frame_time < timedelta(seconds=self._config.frame_read_delay_seconds):
                     frame_skipped = True
                     continue
 

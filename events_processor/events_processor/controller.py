@@ -25,7 +25,7 @@ class MainController:
         self._config = config
         self._detector = detector
         self._threads = [notification_worker, frame_reader_worker]
-        self._threads += [frame_processor_worker_provider.get() for _ in range(config.FRAME_PROCESSING_THREADS)]
+        self._threads += [frame_processor_worker_provider.get() for _ in range(config.frame_processing_threads)]
 
     def start(self, watchdog: bool = True) -> None:
         for thread in self._threads:
@@ -49,7 +49,7 @@ class MainController:
                 self.log.error("Pending processing is stuck, terminating")
                 break
 
-            time.sleep(self._config.THREAD_WATCHDOG_DELAY)
+            time.sleep(self._config.thread_watchdog_delay)
 
     def _detector_is_stuck(self) -> bool:
         return isinstance(self._detector, CoralDetector) and self._detector.get_pending_processing_seconds() > 60

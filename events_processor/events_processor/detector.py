@@ -1,14 +1,13 @@
 import logging
 import math
-import re
 import time
 from threading import Lock
-from typing import Any, Iterable
+from typing import Any
 
 from PIL import Image
 from injector import inject
 
-from events_processor.configtools import get_config, ConfigProvider, extract_config
+from events_processor.configtools import get_config, ConfigProvider
 from events_processor.interfaces import Detector
 from events_processor.models import FrameInfo, Rect, Detection
 
@@ -21,23 +20,15 @@ class CoralDetector(Detector):
         self._config = config
 
         from edgetpu.detection.engine import DetectionEngine
-        self._engine = DetectionEngine(config.MODEL_FILE)
+        self._engine = DetectionEngine(config.model_file)
         self._engine_lock = Lock()
         self._pending_processing_start = None
-
-        self._detection_chunks = extract_config(self._config, 'coral', 'detection_chunks', self._extract_int_pair)
-
-    def _extract_int_pair(self, value: str) -> Iterable[int]:
-        m = re.search(r'(\d+)x(\d+)', value)
-        if m:
-            return [int(x) for x in m.groups()]
-        return []
 
     def detect(self, frame_info: FrameInfo) -> None:
         (h, w, _) = frame_info.image.shape
 
         monitor_id = frame_info.event_info.event_json['MonitorId']
-        (x_chunks, y_chunks) = get_config(self._detection_chunks, monitor_id, (1, 1))
+        (x_chunks, y_chunks) = get_config(self._config.detection_chunks, monitor_id, (1, 1))
 
         chunk_width = w // x_chunks
         chunk_height = h // y_chunks
@@ -61,7 +52,7 @@ class CoralDetector(Detector):
         with self._engine_lock:
             self._pending_processing_start = time.monotonic()
             result = self._engine.DetectWithImage(cropped_img,
-                                                  threshold=self._config.MIN_SCORE,
+                                                  threshold=self._config.min_score,
                                                   keep_aspect_ratio=True,
                                                   relative_coord=False, top_k=1000)
             self._pending_processing_start = None

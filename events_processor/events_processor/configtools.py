@@ -1,6 +1,8 @@
 import re
 from configparser import ConfigParser, ExtendedInterpolation
-from typing import Dict, Callable, Any
+from typing import Dict, Callable, Any, Iterable
+
+from events_processor.models import Point, Polygon
 
 
 def get_config(config_map: Dict,
@@ -37,78 +39,68 @@ class ConfigProvider(ConfigParser):
     def __init__(self, ini):
         super(ConfigParser, self).__init__(interpolation=ExtendedInterpolation())
         self.read(ini)
+        self.reread()
 
-    @property
-    def EVENT_LIST_URL(self): return self['zm']['event_list_url']
+    def reread(self):
+        self.event_list_url = self['zm']['event_list_url']
+        self.event_details_url = self['zm']['event_details_url']
+        self.frame_jpg_path = self['zm']['frame_jpg_path']
 
-    @property
-    def EVENT_DETAILS_URL(self): return self['zm']['event_details_url']
+        self.notification_delay_seconds = self['timings'].getint('notification_delay_seconds', fallback=0)
+        self.events_window_seconds = self['timings'].getint('events_window_seconds', fallback=600)
+        self.event_loop_seconds = self['timings'].getint('event_loop_seconds', fallback=5)
+        self.frame_read_delay_seconds = self['timings'].getint('frame_read_delay_seconds', fallback=5)
+        self.cache_seconds_buffer = self['timings'].getint('cache_seconds_buffer', fallback=120)
 
-    @property
-    def FRAME_FILE_NAME(self): return self['zm']['frame_jpg_path']
+        self.rotations = extract_config(self, 'rotating_preprocessor', 'rotate', int)
 
-    @property
-    def EVENTS_WINDOW_SECONDS(self): return self['timings'].getint('events_window_seconds')
+        self.model_file = self['coral']['model_file']
+        self.min_score = float(self['coral']['min_score'])
+        self.device_path = self['coral'].get('device_path')
+        self.detection_chunks = extract_config(self, 'coral', 'detection_chunks', extract_int_pair)
 
-    @property
-    def EVENT_LOOP_SECONDS(self): return self['timings'].getint('event_loop_seconds')
+        self.excluded_zone_prefix = self['detection_filter'].get('excluded_zone_prefix')
+        self.object_labels = self['detection_filter'].get('object_labels', fallback='person').split(',')
+        self.label_file = self['detection_filter']['label_file']
+        self.movement_indifferent_min_score = extract_config(self, 'detection_filter', 'movement_indifferent_min_score',
+                                                             float)
+        self.coarse_movement_min_score = extract_config(self, 'detection_filter', 'coarse_movement_min_score', float)
+        self.precise_movement_min_score = extract_config(self, 'detection_filter', 'precise_movement_min_score', float)
+        self.max_movement_to_intersection_ratio = extract_config(self, 'detection_filter',
+                                                                 'max_movement_to_intersection_ratio', float)
+        self.min_box_area_percentage = extract_config(self, 'detection_filter', 'min_box_area_percentage', float)
+        self.max_box_area_percentage = extract_config(self, 'detection_filter', 'max_box_area_percentage', float)
+        self.excluded_points = extract_config(self, 'detection_filter', 'excluded_points', coords_to_points)
+        self.excluded_polygons = extract_config(self, 'detection_filter', 'excluded_polygons', coords_to_polygons)
 
-    @property
-    def FRAME_READ_DELAY_SECONDS(self): return self['timings'].getint('frame_read_delay_seconds')
+        self.host = self['mail']['host']
+        self.port = self['mail'].getint('port', fallback=587)
+        self.user = self['mail']['user']
+        self.password = self['mail']['password']
+        self.to_addr = self['mail']['to_addr']
+        self.from_addr = self['mail']['from_addr']
+        self.timeout = self['mail'].getfloat('timeout', fallback=10)
+        self.subject = self['mail']['subject']
+        self.message = re.sub(r'\n\|', '\n', self['mail']['message'])
 
-    @property
-    def CACHE_SECONDS_BUFFER(self): return self['timings'].getint('cache_seconds_buffer')
+        self.frame_processing_threads = self['threading'].getint('frame_processing_threads', fallback=2)
+        self.thread_watchdog_delay = self['threading'].getint('thread_watchdog_delay', fallback=5)
 
-    @property
-    def MODEL_FILE(self): return self['coral']['model_file']
+        self.event_ids = [x for x in self['debug'].get('event_ids', fallback='').split(',') if x]
 
-    @property
-    def MIN_SCORE(self): return float(self['coral']['min_score'])
 
-    @property
-    def EXCLUDED_ZONE_PREFIX(self): return self['detection_filter']['excluded_zone_prefix']
+def coords_to_points(string) -> Iterable[Point]:
+    return [Point(*map(int, m.groups())) for m in re.finditer(r'(\d+),(\d+)', string)]
 
-    @property
-    def OBJECT_LABELS(self): return self['detection_filter']['object_labels'].split(',')
 
-    @property
-    def LABEL_FILE(self): return self['detection_filter']['label_file']
+def coords_to_polygons(string) -> Iterable[Polygon]:
+    polygon_pattern = rf'((?:\d+,\d+,?)+)'
+    return [Polygon(coords_to_points(m.group(0)))
+            for m in re.finditer(polygon_pattern, string)]
 
-    @property
-    def HOST(self): return self['mail']['host']
 
-    @property
-    def PORT(self): return int(self['mail']['port'])
-
-    @property
-    def USER(self): return self['mail']['user']
-
-    @property
-    def NOTIFICATION_DELAY_SECONDS(self): return self['timings'].getint('notification_delay_seconds')
-
-    @property
-    def PASSWORD(self): return self['mail']['password']
-
-    @property
-    def TO_ADDR(self): return self['mail']['to_addr']
-
-    @property
-    def FROM_ADDR(self): return self['mail']['from_addr']
-
-    @property
-    def TIMEOUT(self): return float(self['mail']['timeout'])
-
-    @property
-    def SUBJECT(self): return self['mail']['subject']
-
-    @property
-    def MESSAGE(self): return re.sub(r'\n\|', '\n', self['mail']['message'])
-
-    @property
-    def FRAME_PROCESSING_THREADS(self): return self['threading'].getint('frame_processing_threads')
-
-    @property
-    def THREAD_WATCHDOG_DELAY(self): return self['threading'].getint('thread_watchdog_delay')
-
-    @property
-    def EVENT_IDS(self): return [x for x in self.setdefault('debug', {}).setdefault('event_ids', '').split(',') if x]
+def extract_int_pair(value: str) -> Iterable[int]:
+    m = re.search(r'(\d+)x(\d+)', value)
+    if m:
+        return [int(x) for x in m.groups()]
+    return []

@@ -55,7 +55,7 @@ class DBAlarmBoxReader(AlarmBoxReader, QuerySupport):
                       and zn.Name not like concat(%(prefix)s, '%')""",
                 {'eventId': event_id,
                  'frameId': frame_id,
-                 'prefix': self._config.EXCLUDED_ZONE_PREFIX})
+                 'prefix': self._config.excluded_zone_prefix})
             return cursor.fetchone()
 
         res = self.invoke_query(query)
@@ -74,7 +74,7 @@ class DBZoneReader(ZoneReader, QuerySupport):
                    from Zones z
                    join Monitors m on m.Id = z.MonitorId
                    where z.Name like concat(%(prefix)s, '%')""",
-                {'prefix': self._config.EXCLUDED_ZONE_PREFIX})
+                {'prefix': self._config.excluded_zone_prefix})
             return cursor.fetchall()
 
         return [ZoneInfo(str(m_id), int(w), int(h), name, coords) for (m_id, w, h, name, coords) in

@@ -41,12 +41,12 @@ class MailNotificationSender(NotificationSender):
         msg.attach(image)
 
         try:
-            s = smtplib.SMTP(self._config.HOST, self._config.PORT, timeout=self._config.TIMEOUT)
+            s = smtplib.SMTP(self._config.host, self._config.port, timeout=self._config.timeout)
             s.ehlo()
             s.starttls()
             s.ehlo()
-            s.login(self._config.USER, self._config.PASSWORD)
-            s.sendmail(self._config.FROM_ADDR, self._config.TO_ADDR, msg.as_string())
+            s.login(self._config.user, self._config.password)
+            s.sendmail(self._config.from_addr, self._config.to_addr, msg.as_string())
             s.quit()
 
             return self._event_updater.update_event(event_info, Emailed=1)
@@ -78,7 +78,7 @@ class EventUpdater:
 
     def update_event(self, event_info: EventInfo, **update_spec) -> bool:
         try:
-            url = self._config.EVENT_DETAILS_URL.format(eventId=event_info.event_json['Id'])
+            url = self._config.event_details_url.format(eventId=event_info.event_json['Id'])
             mark_as_mailed_json = {'Event': update_spec}
             response = requests.post(url, json=mark_as_mailed_json)
             response_json = json.loads(response.content)
@@ -103,8 +103,8 @@ class DetectionNotifier:
         mail_dict.update({f"Frame-{x}": y for (x, y) in event_info.frame_info.frame_json.items()})
         mail_dict['Detection-Score'] = 100 * event_info.frame_score
 
-        subject = self._config.SUBJECT.format(**mail_dict)
-        message = self._config.MESSAGE.format(**mail_dict)
+        subject = self._config.subject.format(**mail_dict)
+        message = self._config.message.format(**mail_dict)
 
         return self._notification_sender.send(event_info, subject, message)
 
@@ -131,7 +131,7 @@ class NotificationWorker(Thread):
 
     def _set_notification_time(self, event_info: EventInfo) -> None:
         with event_info.lock:
-            delay = event_info.first_detection_time + self._config.NOTIFICATION_DELAY_SECONDS - time.monotonic()
+            delay = event_info.first_detection_time + self._config.notification_delay_seconds - time.monotonic()
             notification_delay = max(delay, 0)
             event_info.planned_notification = time.monotonic() + notification_delay
 
