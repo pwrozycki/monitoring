@@ -5,10 +5,10 @@ from injector import Module, Binder, InstanceProvider
 from events_processor.configtools import ConfigProvider
 from events_processor.controller import MainController, DefaultSystemTime
 from events_processor.dataaccess import DBZoneReader, DBAlarmBoxReader
-from events_processor.detector import CoralDetector
+from events_processor.detector import CoralDetector, SecondPassCoralDetector, SynchronizedDetectionEngine
 from events_processor.filters import DetectionFilter
 from events_processor.interfaces import Detector, NotificationSender, ImageReader, SystemTime, ZoneReader, \
-    ResourceReader, AlarmBoxReader
+    ResourceReader, AlarmBoxReader, SecondPassDetector, Engine
 from events_processor.models import NotificationQueue, FrameQueue
 from events_processor.notifications import MailNotificationSender, NotificationWorker, FSNotificationSender
 from events_processor.preprocessor import RotatingPreprocessor
@@ -16,7 +16,7 @@ from events_processor.processor import FSImageReader, FrameProcessorWorker
 from events_processor.reader import FrameReader, WebResourceReader, FrameReaderWorker
 
 
-class ProcessorModule(Module):
+class AppBindingsModule(Module):
 
     def configure(self, binder: Binder) -> None:
         binder.bind(FrameReader)
@@ -33,7 +33,9 @@ class ProcessorModule(Module):
         binder.bind(NotificationQueue, to=Queue())
         binder.bind(FrameQueue, to=Queue())
 
+        binder.bind(Engine, SynchronizedDetectionEngine)
         binder.bind(Detector, to=CoralDetector)
+        binder.bind(SecondPassDetector, to=SecondPassCoralDetector)
         binder.bind(NotificationSender, to=MailNotificationSender)
         binder.bind(ImageReader, to=FSImageReader)
         binder.bind(SystemTime, to=DefaultSystemTime)

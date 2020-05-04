@@ -3,7 +3,7 @@ from typing import Tuple, Any
 import cv2
 from injector import inject
 
-from events_processor.configtools import ConfigProvider, extract_config
+from events_processor.configtools import ConfigProvider
 from events_processor.models import FrameInfo, Point
 
 

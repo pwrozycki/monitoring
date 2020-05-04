@@ -4,8 +4,7 @@ import time
 from injector import inject, ProviderOf
 
 from events_processor.configtools import ConfigProvider
-from events_processor.detector import CoralDetector
-from events_processor.interfaces import Detector, SystemTime
+from events_processor.interfaces import SystemTime, Engine
 from events_processor.notifications import NotificationWorker
 from events_processor.processor import FrameProcessorWorker
 from events_processor.reader import FrameReaderWorker
@@ -17,13 +16,13 @@ class MainController:
     @inject
     def __init__(self,
                  config: ConfigProvider,
-                 detector: Detector,
+                 engine: Engine,
                  frame_reader_worker: FrameReaderWorker,
                  notification_worker: NotificationWorker,
                  frame_processor_worker_provider: ProviderOf[FrameProcessorWorker],
                  ):
         self._config = config
-        self._detector = detector
+        self._engine = engine
         self._threads = [notification_worker, frame_reader_worker]
         self._threads += [frame_processor_worker_provider.get() for _ in range(config.frame_processing_threads)]
 
@@ -45,14 +44,14 @@ class MainController:
                 self.log.error("One of threads has died, terminating")
                 break
 
-            if self._detector_is_stuck():
-                self.log.error("Pending processing is stuck, terminating")
+            if self._engine_is_stuck():
+                self.log.error("Coral engine is stuck, terminating")
                 break
 
             time.sleep(self._config.thread_watchdog_delay)
 
-    def _detector_is_stuck(self) -> bool:
-        return isinstance(self._detector, CoralDetector) and self._detector.get_pending_processing_seconds() > 60
+    def _engine_is_stuck(self) -> bool:
+        return self._engine and self._engine.get_pending_processing_seconds() > 60
 
     def _any_thread_is_dead(self) -> bool:
         return any(not t.is_alive() for t in self._threads)

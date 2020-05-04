@@ -54,9 +54,8 @@ class ConfigProvider(ConfigParser):
 
         self.rotations = extract_config(self, 'rotating_preprocessor', 'rotate', int)
 
-        self.model_file = self['coral']['model_file']
+        self.detector_model_file = self['coral']['model_file']
         self.min_score = float(self['coral']['min_score'])
-        self.device_path = self['coral'].get('device_path')
         self.detection_chunks = extract_config(self, 'coral', 'detection_chunks', extract_int_pair)
 
         self.excluded_zone_prefix = self['detection_filter'].get('excluded_zone_prefix')

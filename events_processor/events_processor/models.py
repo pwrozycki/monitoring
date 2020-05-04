@@ -129,4 +129,3 @@ class ZonePolygon:
 
 NotificationQueue = NewType('NotificationQueue', Queue)
 FrameQueue = NewType('FrameQueue', Queue)
-Config = NewType('Config', MutableMapping)

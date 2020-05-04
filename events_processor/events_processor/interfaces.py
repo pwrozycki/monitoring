@@ -12,6 +12,10 @@ class Detector(ABC):
         raise NotImplemented()
 
 
+class SecondPassDetector(Detector, ABC):
+    pass
+
+
 class ImageReader(ABC):
     @abstractmethod
     def read(self, file_name: str) -> Any:
@@ -47,3 +51,13 @@ class ResourceReader(ABC):
     @abstractmethod
     def read(self, url: str) -> Optional[Response]:
         raise NotImplemented()
+
+
+class Engine(ABC):
+    @abstractmethod
+    def detect(selfself, img, threshold):
+        raise NotImplemented
+
+    @abstractmethod
+    def get_pending_processing_seconds(self) -> float:
+        raise NotImplemented

@@ -2,7 +2,7 @@ from argparse import ArgumentParser
 
 from injector import Injector
 
-from events_processor.bindings import ProcessorModule, FSNotificationSenderOverride
+from events_processor.bindings import AppBindingsModule, FSNotificationSenderOverride
 from events_processor.configtools import ConfigProvider
 from events_processor.controller import MainController
 
@@ -18,7 +18,7 @@ def main():
         help="analyze specific events instead of fetching recent ones. Specify comma separated list of event ids")
     args = argparser.parse_args()
 
-    modules = [ProcessorModule]
+    modules = [AppBindingsModule]
     if args.fs_notifier:
         modules.append(FSNotificationSenderOverride)
 

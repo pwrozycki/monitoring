@@ -8,7 +8,7 @@ import cv2
 from injector import inject
 
 from events_processor.filters import DetectionFilter
-from events_processor.interfaces import Detector, ImageReader
+from events_processor.interfaces import Detector, ImageReader, SecondPassDetector
 from events_processor.models import FrameInfo, FrameQueue, NotificationQueue
 from events_processor.preprocessor import RotatingPreprocessor
 
@@ -34,6 +34,7 @@ class FrameProcessorWorker(Thread):
                  frame_queue: FrameQueue,
                  notification_queue: NotificationQueue,
                  detector: Detector,
+                 second_pass_detector: SecondPassDetector,
                  image_reader: ImageReader,
                  detection_filter: DetectionFilter,
                  preprocessor: RotatingPreprocessor):
@@ -44,6 +45,7 @@ class FrameProcessorWorker(Thread):
         self._frame_queue = frame_queue
         self._notification_queue = notification_queue
         self._detector = detector
+        self._second_pass_detector = second_pass_detector
         self._detection_filter = detection_filter
         self._preprocessor = preprocessor
 
@@ -72,6 +74,7 @@ class FrameProcessorWorker(Thread):
             for action in (self._preprocessor.preprocess,
                            self._detector.detect,
                            self._detection_filter.filter_detections,
+                           self._second_pass_detector.detect,
                            self._record_event_frame):
                 if action:
                     action(frame_info)
@@ -92,6 +95,6 @@ class FrameProcessorWorker(Thread):
                 event_info.frame_info = frame_info
                 event_info.frame_score = score
 
-                if event_info.first_detection_time is None:
+                if event_info.first_detection_time == 0:
                     event_info.first_detection_time = time.monotonic()
                 self._notification_queue.put(event_info)

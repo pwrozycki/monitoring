@@ -1,14 +1,12 @@
 import logging
-import re
-from typing import Dict, Iterable
+from typing import Dict
 
 from injector import inject
 from shapely import geometry
 
-from events_processor.configtools import get_config, ConfigProvider, extract_config, coords_to_points, \
-    coords_to_polygons
+from events_processor.configtools import get_config, ConfigProvider, coords_to_polygons
 from events_processor.interfaces import ZoneReader, AlarmBoxReader
-from events_processor.models import Point, FrameInfo, Detection, Rect, ZonePolygon, Polygon, ZoneInfo
+from events_processor.models import FrameInfo, Detection, Rect, ZonePolygon, Polygon, ZoneInfo
 from events_processor.preprocessor import RotatingPreprocessor
 
 INTERSECTION_DISCARDED_THRESHOLD = 1E-6

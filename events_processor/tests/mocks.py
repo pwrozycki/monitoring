@@ -7,8 +7,8 @@ import numpy as np
 from injector import singleton
 
 from events_processor.interfaces import Detector, ResourceReader, NotificationSender, ImageReader, SystemTime, \
-    ZoneReader, AlarmBoxReader
-from events_processor.models import EventInfo, ZoneInfo, Rect
+    ZoneReader, AlarmBoxReader, SecondPassDetector, Engine
+from events_processor.models import EventInfo, ZoneInfo, Rect, FrameInfo
 
 
 @singleton
@@ -94,6 +94,20 @@ class TestAlarmBoxReader(AlarmBoxReader):
 
     def read(self, event_id: str, frame_id: str) -> Optional[Rect]:
         return self.box
+
+
+class TestNoOpDetector(SecondPassDetector):
+    def detect(self, frame: FrameInfo):
+        pass
+
+
+class TestNoOpEngine(Engine):
+
+    def detect(selfself, img, threshold):
+        pass
+
+    def get_pending_processing_seconds(self) -> float:
+        return 0
 
 
 class Response:

@@ -4,12 +4,12 @@ from typing import Iterable
 import numpy as np
 from injector import Injector
 
-from events_processor.bindings import ProcessorModule
+from events_processor.bindings import AppBindingsModule
 from events_processor.configtools import ConfigProvider
 from events_processor.controller import MainController
 from events_processor.interfaces import Detector, NotificationSender, ZoneReader, AlarmBoxReader, ResourceReader
 from events_processor.models import Detection, Rect, ZoneInfo
-from tests.bindings import TestOverridesModule
+from tests.bindings import TestBindingsModule
 
 
 class TestDetection(Detection):
@@ -72,7 +72,7 @@ def run_pipeline(detections=None,
                  zones: Iterable[ZoneInfo] = ()):
     detections = detections if detections else {0: [TestDetection(score=score, bounding_box=np.array([1, 1, 50, 50]))]}
 
-    injector = Injector([ProcessorModule, TestOverridesModule])
+    injector = Injector([AppBindingsModule, TestBindingsModule])
 
     config = injector.get(ConfigProvider)
     if config_updates:
