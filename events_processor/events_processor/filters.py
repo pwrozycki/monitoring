@@ -86,12 +86,12 @@ class DetectionFilter:
                 details = f"movement_ratio: {movement_ratio:.2f}, detection_box: {detection_box.area:.2f}, " \
                           f"movement_box: {movement_box.area:.2f}, intersection_box: {intersection_box.area:.2f}"
 
-                if detection.score >= get_config(self._config.coarse_movement_min_score, monitor_id, 0):
+                if detection.score >= get_config(self._config.coarse_movement_min_score, monitor_id, 1):
                     self.log.debug(f"Detection accepted for frame {frame_info} - coarse movement - {details}")
                     return False
 
                 if (movement_ratio < get_config(self._config.max_movement_to_intersection_ratio, monitor_id, 0)
-                        and detection.score >= get_config(self._config.precise_movement_min_score, monitor_id, 0)):
+                        and detection.score >= get_config(self._config.precise_movement_min_score, monitor_id, 1)):
                     self.log.debug(f"Detection accepted for frame {frame_info} - precise movement - {details}")
                     return False
 
