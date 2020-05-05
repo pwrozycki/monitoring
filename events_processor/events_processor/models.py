@@ -128,6 +128,12 @@ class ZoneInfo:
 
 
 @dataclass
+class MonitorInfo:
+    id: str
+    name: str
+
+
+@dataclass
 class ZonePolygon:
     zone: ZoneInfo
     polygon: Polygon

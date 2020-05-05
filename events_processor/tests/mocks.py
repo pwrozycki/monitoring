@@ -7,8 +7,8 @@ import numpy as np
 from injector import singleton, inject
 
 from events_processor.interfaces import Detector, ResourceReader, NotificationSender, ImageReader, SystemTime, \
-    ZoneReader, AlarmBoxReader, Engine
-from events_processor.models import EventInfo, ZoneInfo, Rect
+    ZoneReader, AlarmBoxReader, Engine, MonitorReader
+from events_processor.models import EventInfo, ZoneInfo, Rect, MonitorInfo
 
 
 @singleton
@@ -22,7 +22,7 @@ class TestDetector(Detector):
         event_id = frame_info.frame_json['EventId']
         frame_id = frame_info.frame_json['FrameId']
         # TODO: prozycki: alarm box needs to be rotated according to rotations, otherwise tests involving rotations will fail
-        frame_info.alarm_box = self._alarm_box_reader.read(event_id, frame_id)
+        frame_info.alarm_box = self._alarm_box_reader.read(event_id, frame_id, self._config.excluded_zone_prefix)
         frame_info.detections = self.detections.get(event_id, {}).get(frame_id, [])
 
 
@@ -87,7 +87,7 @@ class TestZoneReader(ZoneReader):
     def __init__(self):
         self.zones: Iterable[ZoneInfo] = ()
 
-    def read(self) -> Iterable[ZoneInfo]:
+    def read(self, excl_zone_prefix) -> Iterable[ZoneInfo]:
         return self.zones
 
 
@@ -96,8 +96,14 @@ class TestAlarmBoxReader(AlarmBoxReader):
     def __init__(self):
         self.box: Optional[Rect] = None
 
-    def read(self, event_id: str, frame_id: str) -> Optional[Rect]:
+    def read(self, event_id: str, frame_id: str, excl_zone_prefix) -> Optional[Rect]:
         return self.box
+
+
+@singleton
+class TestMonitorReader(MonitorReader):
+    def read(self) -> Iterable[MonitorInfo]:
+        return []
 
 
 class TestNoOpEngine(Engine):

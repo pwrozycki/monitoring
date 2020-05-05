@@ -1,9 +1,9 @@
 from injector import Module, Binder
 
 from events_processor.interfaces import Detector, NotificationSender, ImageReader, SystemTime, ZoneReader, \
-    ResourceReader, AlarmBoxReader, Engine
+    ResourceReader, AlarmBoxReader, Engine, MonitorReader
 from tests.mocks import TestDetector, TestResourceReader, TestSender, TestImageReader, TestTime, TestZoneReader, \
-    TestAlarmBoxReader, TestNoOpEngine
+    TestAlarmBoxReader, TestNoOpEngine, TestMonitorReader
 
 
 class TestBindingsModule(Module):
@@ -16,3 +16,4 @@ class TestBindingsModule(Module):
         binder.bind(ZoneReader, to=TestZoneReader)
         binder.bind(ResourceReader, to=TestResourceReader)
         binder.bind(AlarmBoxReader, to=TestAlarmBoxReader)
+        binder.bind(MonitorReader, to=TestMonitorReader)

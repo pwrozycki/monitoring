@@ -75,7 +75,7 @@ class CoralDetector(Detector):
         height = int(frame_info.event_info.event_json['Height'])
         width = int(frame_info.event_info.event_json['Width'])
 
-        alarm_box = self._alarm_box_reader.read(event_id, frame_id)
+        alarm_box = self._alarm_box_reader.read(event_id, frame_id, self._config.excluded_zone_prefix)
         if alarm_box:
             transformed_points = (self._transform_coords(monitor_id, width, height, pt)
                                   for pt in alarm_box.points)

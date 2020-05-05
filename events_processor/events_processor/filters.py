@@ -29,7 +29,7 @@ class DetectionFilter:
 
     def _config_parse(self) -> None:
         self._excluded_zone_polygons = {}
-        for zone in self._zone_reader.read():
+        for zone in self._zone_reader.read(self._config.excluded_zone_prefix):
             polys = coords_to_polygons(zone.coords.replace(' ', ','))
             zone_polys = [ZonePolygon(zone, poly) for poly in polys]
             self._excluded_zone_polygons.setdefault(zone.monitor_id, []).extend(zone_polys)

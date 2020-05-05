@@ -2,6 +2,9 @@ import re
 from configparser import ConfigParser, ExtendedInterpolation
 from typing import Dict, Callable, Any, Iterable
 
+from injector import inject
+
+from events_processor.interfaces import MonitorReader
 from events_processor.models import Point, Polygon
 
 
@@ -16,29 +19,15 @@ def get_config(config_map: Dict,
     return default
 
 
-def _set_config(key: str,
-                value: str,
-                config_key: str,
-                dictionary: Dict[str, Any],
-                transform: Callable[[str], Any]):
-    m = re.match(config_key + r'(\d*)', key)
-    if m:
-        monitor_id = m.group(1)
-        k = monitor_id if monitor_id else 'default'
-        dictionary[k] = transform(value)
-
-
-def extract_config(conf, section, config_key, transform):
-    d = {}
-    for (key, value) in conf[section].items():
-        _set_config(key, value, config_key, d, transform)
-    return d
-
-
 class ConfigProvider(ConfigParser):
-    def __init__(self, ini):
+    @inject
+    def __init__(self,
+                 monitor_reader: MonitorReader):
         super(ConfigParser, self).__init__(interpolation=ExtendedInterpolation())
-        self.read(ini)
+        self.optionxform = str
+        self._monitor_id_for_name = {m.name: m.id for m in monitor_reader.read()}
+
+        self.read('events_processor.ini')
         self.reread()
 
     def reread(self):
@@ -52,25 +41,25 @@ class ConfigProvider(ConfigParser):
         self.frame_read_delay_seconds = self['timings'].getint('frame_read_delay_seconds', fallback=5)
         self.cache_seconds_buffer = self['timings'].getint('cache_seconds_buffer', fallback=120)
 
-        self.rotations = extract_config(self, 'rotating_preprocessor', 'rotate', int)
+        self.rotations = self.extract_config('rotating_preprocessor', 'rotate', int)
 
         self.detector_model_file = self['coral']['model_file']
         self.min_score = float(self['coral']['min_score'])
-        self.detection_chunks = extract_config(self, 'coral', 'detection_chunks', extract_int_pair)
+        self.detection_chunks = self.extract_config('coral', 'detection_chunks', extract_int_pair)
 
         self.excluded_zone_prefix = self['detection_filter'].get('excluded_zone_prefix')
         self.object_labels = self['detection_filter'].get('object_labels', fallback='person').split(',')
         self.label_file = self['detection_filter']['label_file']
-        self.movement_indifferent_min_score = extract_config(self, 'detection_filter', 'movement_indifferent_min_score',
-                                                             float)
-        self.coarse_movement_min_score = extract_config(self, 'detection_filter', 'coarse_movement_min_score', float)
-        self.precise_movement_min_score = extract_config(self, 'detection_filter', 'precise_movement_min_score', float)
-        self.max_movement_to_intersection_ratio = extract_config(self, 'detection_filter',
-                                                                 'max_movement_to_intersection_ratio', float)
-        self.min_box_area_percentage = extract_config(self, 'detection_filter', 'min_box_area_percentage', float)
-        self.max_box_area_percentage = extract_config(self, 'detection_filter', 'max_box_area_percentage', float)
-        self.excluded_points = extract_config(self, 'detection_filter', 'excluded_points', coords_to_points)
-        self.excluded_polygons = extract_config(self, 'detection_filter', 'excluded_polygons', coords_to_polygons)
+        self.movement_indifferent_min_score = self.extract_config('detection_filter', 'movement_indifferent_min_score',
+                                                                  float)
+        self.coarse_movement_min_score = self.extract_config('detection_filter', 'coarse_movement_min_score', float)
+        self.precise_movement_min_score = self.extract_config('detection_filter', 'precise_movement_min_score', float)
+        self.max_movement_to_intersection_ratio = self.extract_config('detection_filter',
+                                                                      'max_movement_to_intersection_ratio', float)
+        self.min_box_area_percentage = self.extract_config('detection_filter', 'min_box_area_percentage', float)
+        self.max_box_area_percentage = self.extract_config('detection_filter', 'max_box_area_percentage', float)
+        self.excluded_points = self.extract_config('detection_filter', 'excluded_points', coords_to_points)
+        self.excluded_polygons = self.extract_config('detection_filter', 'excluded_polygons', coords_to_polygons)
 
         self.host = self['mail']['host']
         self.port = self['mail'].getint('port', fallback=587)
@@ -87,6 +76,31 @@ class ConfigProvider(ConfigParser):
 
         self.event_ids = [x for x in self['debug'].get('event_ids', fallback='').split(',') if x]
         self.debug_images = [x for x in self['debug'].get('debug_images', fallback='').split(',') if x]
+
+    def _set_config(self,
+                    key: str,
+                    value: str,
+                    config_key: str,
+                    dictionary: Dict[str, Any],
+                    transform: Callable[[str], Any]):
+        monitor_id = ''
+        m = re.match(fr'{config_key}(\d*)', key)
+        if m:
+            monitor_id = m.group(1)
+            monitor_id = monitor_id or 'default'
+
+        m = re.match(fr'{config_key}_(\w+)', key)
+        if m:
+            monitor_id = self._monitor_id_for_name[m.group(1)]
+
+        if monitor_id:
+            dictionary[monitor_id] = transform(value)
+
+    def extract_config(self, section, config_key, transform):
+        d = {}
+        for (key, value) in self[section].items():
+            self._set_config(key, value, config_key, d, transform)
+        return d
 
 
 def coords_to_points(string) -> Iterable[Point]:

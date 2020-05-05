@@ -3,7 +3,7 @@ from typing import Any, Iterable, Optional
 
 from requests import Response
 
-from events_processor.models import FrameInfo, EventInfo, ZoneInfo, Rect
+from events_processor.models import FrameInfo, EventInfo, ZoneInfo, Rect, MonitorInfo
 
 
 class Detector(ABC):
@@ -32,14 +32,19 @@ class SystemTime(ABC):
 
 class ZoneReader(ABC):
     @abstractmethod
-    def read(self) -> Iterable[ZoneInfo]:
+    def read(self, excl_zone_prefix) -> Iterable[ZoneInfo]:
+        raise NotImplemented()
+
+
+class MonitorReader(ABC):
+    @abstractmethod
+    def read(self) -> Iterable[MonitorInfo]:
         raise NotImplemented()
 
 
 class AlarmBoxReader(ABC):
     @abstractmethod
-    def read(self, event_id: str,
-             frame_id: str) -> Optional[Rect]:
+    def read(self, event_id: str, frame_id: str, excl_zone_prefix) -> Optional[Rect]:
         raise NotImplemented()
 
 

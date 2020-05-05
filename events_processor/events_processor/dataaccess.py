@@ -1,20 +1,20 @@
+from configparser import ConfigParser, ExtendedInterpolation
 from typing import Callable, Any, Dict, Iterable, Optional
 
 import mysql.connector
-from injector import inject
 from mysql.connector import Error
 
-from events_processor.configtools import ConfigProvider
-from events_processor.interfaces import ZoneReader, AlarmBoxReader
-from events_processor.models import ZoneInfo, Rect
+from events_processor.interfaces import ZoneReader, AlarmBoxReader, MonitorReader
+from events_processor.models import ZoneInfo, Rect, MonitorInfo
 
 _CONN_POOL_DEFAULTS = {'pool_size': 8,
                        'pool_name': "mysql_conn_pool"}
 
 
 class QuerySupport:
-    def __init__(self, config: ConfigProvider):
-        self._config = config
+    def __init__(self):
+        self._config = ConfigParser(interpolation=ExtendedInterpolation())
+        self._config.read('db.ini')
 
     def _db_config(self, int_keywords: Iterable[str] = ('pool_size',)) -> Dict:
         db_config = _CONN_POOL_DEFAULTS
@@ -40,12 +40,7 @@ class QuerySupport:
 
 
 class DBAlarmBoxReader(AlarmBoxReader, QuerySupport):
-    @inject
-    def __init__(self, config: ConfigProvider):
-        QuerySupport.__init__(self, config)
-
-    def read(self, event_id: str,
-             frame_id: str) -> Optional[Rect]:
+    def read(self, event_id: str, frame_id: str, excl_zone_prefix) -> Optional[Rect]:
         def query(cursor):
             cursor.execute(
                 """select st.MinX, st.MinY, st.MaxX, st.MaxY 
@@ -55,7 +50,7 @@ class DBAlarmBoxReader(AlarmBoxReader, QuerySupport):
                       and zn.Name not like concat(%(prefix)s, '%')""",
                 {'eventId': event_id,
                  'frameId': frame_id,
-                 'prefix': self._config.excluded_zone_prefix})
+                 'prefix': excl_zone_prefix})
             return cursor.fetchone()
 
         res = self.invoke_query(query)
@@ -63,19 +58,26 @@ class DBAlarmBoxReader(AlarmBoxReader, QuerySupport):
 
 
 class DBZoneReader(ZoneReader, QuerySupport):
-    @inject
-    def __init__(self, config: ConfigProvider):
-        QuerySupport.__init__(self, config)
-
-    def read(self) -> Iterable[ZoneInfo]:
+    def read(self, excl_zone_prefix) -> Iterable[ZoneInfo]:
         def query(cursor):
             cursor.execute(
                 """select m.Id, m.Width, m.Height, z.Name, z.Coords 
                    from Zones z
                    join Monitors m on m.Id = z.MonitorId
                    where z.Name like concat(%(prefix)s, '%')""",
-                {'prefix': self._config.excluded_zone_prefix})
+                {'prefix': excl_zone_prefix})
             return cursor.fetchall()
 
         return [ZoneInfo(str(m_id), int(w), int(h), name, coords) for (m_id, w, h, name, coords) in
                 self.invoke_query(query)]
+
+
+class DBMonitorReader(MonitorReader, QuerySupport):
+    def read(self) -> Iterable[MonitorInfo]:
+        def query(cursor):
+            cursor.execute(
+                """select m.Id, m.Name
+                   from Monitors m """)
+            return cursor.fetchall()
+
+        return [MonitorInfo(id, name) for (id, name) in self.invoke_query(query)]

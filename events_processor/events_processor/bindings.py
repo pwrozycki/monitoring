@@ -1,14 +1,14 @@
 from queue import Queue
 
-from injector import Module, Binder, InstanceProvider
+from injector import Module, Binder, singleton
 
 from events_processor.configtools import ConfigProvider
 from events_processor.controller import MainController, DefaultSystemTime
-from events_processor.dataaccess import DBZoneReader, DBAlarmBoxReader
+from events_processor.dataaccess import DBZoneReader, DBAlarmBoxReader, DBMonitorReader
 from events_processor.detector import CoralDetector, SynchronizedDetectionEngine
 from events_processor.filters import DetectionFilter
 from events_processor.interfaces import Detector, NotificationSender, ImageReader, SystemTime, ZoneReader, \
-    ResourceReader, AlarmBoxReader, Engine
+    ResourceReader, AlarmBoxReader, Engine, MonitorReader
 from events_processor.models import NotificationQueue, FrameQueue
 from events_processor.notifications import MailNotificationSender, NotificationWorker, FSNotificationSender
 from events_processor.preprocessor import RotatingPreprocessor
@@ -24,7 +24,7 @@ class AppBindingsModule(Module):
         binder.bind(DetectionFilter)
         binder.bind(RotatingPreprocessor)
 
-        binder.bind(ConfigProvider, to=InstanceProvider(ConfigProvider('events_processor.ini')))
+        binder.bind(ConfigProvider, scope=singleton)
 
         binder.bind(FrameReaderWorker)
         binder.bind(FrameProcessorWorker)
@@ -41,6 +41,7 @@ class AppBindingsModule(Module):
         binder.bind(ZoneReader, to=DBZoneReader)
         binder.bind(ResourceReader, to=WebResourceReader)
         binder.bind(AlarmBoxReader, to=DBAlarmBoxReader)
+        binder.bind(MonitorReader, to=DBMonitorReader)
 
 
 class FSNotificationSenderOverride(Module):
