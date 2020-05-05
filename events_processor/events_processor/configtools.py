@@ -86,6 +86,7 @@ class ConfigProvider(ConfigParser):
         self.thread_watchdog_delay = self['threading'].getint('thread_watchdog_delay', fallback=5)
 
         self.event_ids = [x for x in self['debug'].get('event_ids', fallback='').split(',') if x]
+        self.debug_images = [x for x in self['debug'].get('debug_images', fallback='').split(',') if x]
 
 
 def coords_to_points(string) -> Iterable[Point]:

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from queue import Queue
 from threading import Lock
-from typing import Any, Sequence, Dict, Tuple, NewType, MutableMapping, Iterable
+from typing import Any, Sequence, Dict, Tuple, NewType, Iterable, List
 
 from shapely import geometry
 
@@ -48,11 +48,11 @@ class Rect:
 
     @property
     def width(self):
-        return abs(self.right - self.left)
+        return abs(self.right - self.left + 1)
 
     @property
     def height(self):
-        return abs(self.bottom - self.top)
+        return abs(self.bottom - self.top + 1)
 
     @property
     def area(self):
@@ -61,6 +61,10 @@ class Rect:
     @property
     def box_tuple(self) -> Tuple[int, int, int, int]:
         return self.left, self.top, self.right, self.bottom
+
+    @property
+    def points(self):
+        return (self.top_left, self.top_right, self.bottom_right, self.bottom_left)
 
     def moved_by(self, x, y) -> 'Rect':
         return Rect(*self.top_left.moved_by(x, y).tuple,
@@ -90,6 +94,8 @@ class FrameInfo:
     detections: Sequence[Detection] = field(init=False)
     image: Any = field(init=False)
     event_info: "EventInfo" = field(init=False)
+    alarm_box: Rect = None
+    chunk_rects: List[Rect] = field(default_factory=list)
 
     def __str__(self):
         log_dict = dict(self.event_info.event_json)

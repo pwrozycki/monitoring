@@ -16,6 +16,10 @@ def main():
     argparser.add_argument(
         "--event-ids",
         help="analyze specific events instead of fetching recent ones. Specify comma separated list of event ids")
+    argparser.add_argument(
+        "--debug-images",
+        help="write debug images",
+        action="store_true")
     args = argparser.parse_args()
 
     modules = [AppBindingsModule]
@@ -23,10 +27,12 @@ def main():
         modules.append(FSNotificationSenderOverride)
 
     injector = Injector(modules)
+    config = injector.get(ConfigProvider)
     if args.event_ids:
-        config = injector.get(ConfigProvider)
         config['debug']['event_ids'] = args.event_ids
-        config.reread()
+    if args.debug_images:
+        config['debug']['debug_images'] = str(args.debug_images)
+    config.reread()
 
     controller = injector.get(MainController)
     controller.start()

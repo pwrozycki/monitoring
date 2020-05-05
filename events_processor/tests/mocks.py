@@ -4,21 +4,25 @@ import time
 from typing import Any, Iterable, Optional
 
 import numpy as np
-from injector import singleton
+from injector import singleton, inject
 
 from events_processor.interfaces import Detector, ResourceReader, NotificationSender, ImageReader, SystemTime, \
-    ZoneReader, AlarmBoxReader, SecondPassDetector, Engine
-from events_processor.models import EventInfo, ZoneInfo, Rect, FrameInfo
+    ZoneReader, AlarmBoxReader, Engine
+from events_processor.models import EventInfo, ZoneInfo, Rect
 
 
 @singleton
 class TestDetector(Detector):
-    def __init__(self):
+    @inject
+    def __init__(self, alarm_box_reader: AlarmBoxReader):
         self.detections: {}
+        self._alarm_box_reader = alarm_box_reader
 
     def detect(self, frame_info) -> None:
         event_id = frame_info.frame_json['EventId']
         frame_id = frame_info.frame_json['FrameId']
+        # TODO: prozycki: alarm box needs to be rotated according to rotations, otherwise tests involving rotations will fail
+        frame_info.alarm_box = self._alarm_box_reader.read(event_id, frame_id)
         frame_info.detections = self.detections.get(event_id, {}).get(frame_id, [])
 
 
@@ -94,11 +98,6 @@ class TestAlarmBoxReader(AlarmBoxReader):
 
     def read(self, event_id: str, frame_id: str) -> Optional[Rect]:
         return self.box
-
-
-class TestNoOpDetector(SecondPassDetector):
-    def detect(self, frame: FrameInfo):
-        pass
 
 
 class TestNoOpEngine(Engine):

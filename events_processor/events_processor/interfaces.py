@@ -12,10 +12,6 @@ class Detector(ABC):
         raise NotImplemented()
 
 
-class SecondPassDetector(Detector, ABC):
-    pass
-
-
 class ImageReader(ABC):
     @abstractmethod
     def read(self, file_name: str) -> Any:

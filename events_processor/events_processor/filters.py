@@ -5,7 +5,7 @@ from injector import inject
 from shapely import geometry
 
 from events_processor.configtools import get_config, ConfigProvider, coords_to_polygons
-from events_processor.interfaces import ZoneReader, AlarmBoxReader
+from events_processor.interfaces import ZoneReader
 from events_processor.models import FrameInfo, Detection, Rect, ZonePolygon, Polygon, ZoneInfo
 from events_processor.preprocessor import RotatingPreprocessor
 
@@ -18,13 +18,11 @@ class DetectionFilter:
     @inject
     def __init__(self,
                  preprocessor: RotatingPreprocessor,
-                 alarm_box_reader: AlarmBoxReader,
                  zone_reader: ZoneReader,
                  config: ConfigProvider):
         self._config = config
         self._labels = self._read_labels()
         self._transform_coords = preprocessor.transform_coords
-        self._alarm_box_reader = alarm_box_reader
         self._zone_reader = zone_reader
         self._config = config
         self._config_parse()
@@ -79,10 +77,9 @@ class DetectionFilter:
         if detection.score >= get_config(self._config.movement_indifferent_min_score, monitor_id, 0):
             return False
 
-        alarm_box = self._alarm_box_reader.read(frame_info.frame_json['EventId'],
-                                                frame_info.frame_json['FrameId'])
+        alarm_box = frame_info.alarm_box
         if alarm_box:
-            (detection_box, movement_box, intersection_box) = self._calculate_boxes(alarm_box, detection, frame_info)
+            (detection_box, movement_box, intersection_box) = self._calculate_boxes(alarm_box, detection)
 
             if intersection_box.area > INTERSECTION_DISCARDED_THRESHOLD:
                 movement_ratio = movement_box.area / intersection_box.area
@@ -100,16 +97,8 @@ class DetectionFilter:
 
         return True
 
-    def _calculate_boxes(self, alarm_box: Rect, detection: Detection, frame_info: FrameInfo):
-        original_points = [alarm_box.top_left, alarm_box.top_right, alarm_box.bottom_right, alarm_box.bottom_left]
-
-        w = int(frame_info.event_info.event_json['Width'])
-        h = int(frame_info.event_info.event_json['Height'])
-        monitor_id = frame_info.event_info.event_json['MonitorId']
-
-        transformed_points = (self._transform_coords(monitor_id, w, h, pt).tuple for pt in original_points)
-
-        movement_poly = geometry.Polygon(transformed_points)
+    def _calculate_boxes(self, alarm_box: Rect, detection: Detection):
+        movement_poly = geometry.Polygon([pt.tuple for pt in alarm_box.points])
         detection_box = geometry.box(*detection.rect.box_tuple)
         intersection_box = movement_poly.intersection(detection_box)
 
