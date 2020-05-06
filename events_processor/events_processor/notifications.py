@@ -75,7 +75,7 @@ class EventUpdater:
 
     def update_event(self, event_info: EventInfo, **update_spec) -> bool:
         try:
-            url = self._config.event_details_url.format(eventId=event_info.event_json['Id'])
+            url = self._config.event_details_url.format(eventId=event_info.event_id)
             mark_as_mailed_json = {'Event': update_spec}
             response = requests.post(url, json=mark_as_mailed_json)
             response_json = json.loads(response.content)

@@ -92,9 +92,9 @@ class FrameInfo:
     frame_json: Dict
     monitor_json: Dict
     image_path: str
+    event_info: "EventInfo"
     detections: Sequence[Detection] = field(init=False)
     image: Any = field(init=False)
-    event_info: "EventInfo" = field(init=False)
     alarm_box: Rect = None
     chunk_rects: List[Rect] = field(default_factory=list)
 
@@ -108,6 +108,14 @@ class FrameInfo:
     @property
     def event_id(self):
         return self.frame_json['EventId']
+
+    @property
+    def timestamp(self):
+        return self.frame_json['TimeStamp']
+
+    @property
+    def type(self):
+        return self.frame_json['Type']
 
 
 @dataclass(init=True, eq=False)
@@ -139,6 +147,14 @@ class EventInfo:
     @property
     def width(self):
         return int(self.event_json['Width'])
+
+    @property
+    def end_time(self):
+        return self.event_json['EndTime']
+
+    @property
+    def emailed(self):
+        return self.event_json['Emailed'] == '1'
 
 
 @dataclass

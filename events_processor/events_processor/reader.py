@@ -3,7 +3,7 @@ import logging
 import time
 from datetime import datetime, timedelta
 from threading import Thread
-from typing import Dict, Optional, Tuple, Iterable
+from typing import Dict, Optional, Tuple, Iterable, List
 
 import requests
 from cachetools import TTLCache
@@ -80,18 +80,20 @@ class FrameReader:
             (event_json, _, _) = details
             yield event_json
 
-    def frames_iter(self, event_ids: Iterable[str]) -> Iterable[FrameInfo]:
-        for event_id in event_ids:
-            details = self.get_event_details_json(event_id)
-            if not details:
-                continue
-            (event_json, frames_json, monitor_json) = details
+    def frames(self, event_info: EventInfo) -> Iterable[FrameInfo]:
+        details = self.get_event_details_json(event_info.event_id)
+        if not details:
+            return ()
 
-            for frame_json in frames_json:
-                frame_id = frame_json['FrameId']
+        (event_json, frames_json, monitor_json) = details
 
-                file_name = self._get_frame_jpg_path(event_id, event_json, frame_id)
-                yield FrameInfo(frame_json, monitor_json, file_name)
+        frames = []
+        for frame_json in frames_json:
+            frame_id = frame_json['FrameId']
+            file_name = self._get_frame_jpg_path(event_info.event_id, event_json, frame_id)
+            frames.append(FrameInfo(frame_json, monitor_json, file_name, event_info))
+
+        return frames
 
     def _get_frame_jpg_path(self, event_id: str, event_json: Dict, frame_id: str) -> str:
         file_name = self._config.frame_jpg_path.format(
@@ -118,8 +120,9 @@ class FrameReaderWorker(Thread):
         self._system_time = system_time
 
         self._frame_queue = frame_queue
-        self._events_cache = TTLCache(maxsize=10000000, ttl=config.events_window_seconds + config.cache_seconds_buffer)
-        self._frames_cache = TTLCache(maxsize=10000000, ttl=config.events_window_seconds + config.cache_seconds_buffer)
+        event_ttl = config.events_window_seconds + config.cache_seconds_buffer
+        self._recent_events = TTLCache(maxsize=10000000, ttl=event_ttl)
+        self._frames_added_to_queue = TTLCache(maxsize=10000000, ttl=event_ttl)
 
         self._frame_reader = frame_reader
         if config.event_ids:
@@ -143,38 +146,47 @@ class FrameReaderWorker(Thread):
 
     def _collect_events(self) -> None:
         self.log.info("Fetching event list")
+
         for event_json in self._events_iter():
             event_id = event_json['Id']
-            event_info = self._events_cache.setdefault(event_id, EventInfo())
+            event_info = self._recent_events.setdefault(event_id, EventInfo())
             event_info.event_json = event_json
 
             if event_info.all_frames_were_read or event_info.notification_sent:
                 continue
 
-            mailed = event_json['Emailed'] == '1'
-            if mailed and self._skip_mailed:
+            if event_info.emailed and self._skip_mailed:
                 self.log.debug(f'Skipping processing of event {event_info} as it was already mailed')
                 continue
 
-            self.log.info(f"Reading event {event_info}")
+            self._collect_frames(event_info)
 
-            frame_skipped = False
-            for frame_info in self._frame_reader.frames_iter(event_ids=(event_id,)):
-                if frame_info.frame_json['Type'] != 'Alarm':
+    def _collect_frames(self, event_info):
+        self.log.info(f"Reading event frames: {event_info}")
+
+        frames = self._frame_reader.frames(event_info)
+        if frames:
+            pending_frames = False
+            for frame_info in frames:
+                if frame_info.type != 'Alarm':
                     continue
 
-                frame_time = datetime.strptime(frame_info.frame_json['TimeStamp'], '%Y-%m-%d %H:%M:%S')
-                if datetime.now() - frame_time < timedelta(seconds=self._config.frame_read_delay_seconds):
-                    frame_skipped = True
+                key = f'{frame_info.event_id}_{frame_info.frame_id}'
+                if key in self._frames_added_to_queue:
                     continue
 
-                key = '{EventId}_{FrameId}'.format(**frame_info.frame_json)
-                if key in self._frames_cache:
-                    continue
-                self._frames_cache[key] = 1
+                if self._frame_data_has_settled(frame_info):
+                    self._frame_queue.put(frame_info)
+                    self._frames_added_to_queue[key] = 1
+                else:
+                    pending_frames = True
 
-                frame_info.event_info = event_info
-                self._frame_queue.put(frame_info)
-
-            if not frame_skipped and event_info.event_json['EndTime'] is not None:
+            if not pending_frames and event_info.end_time is not None:
                 event_info.all_frames_were_read = True
+
+    def _frame_data_has_settled(self, frame_info):
+        frame_timestamp = datetime.strptime(frame_info.timestamp, '%Y-%m-%d %H:%M:%S')
+        return datetime.now() >= frame_timestamp + timedelta(seconds=self._config.frame_read_delay_seconds)
+
+
+
