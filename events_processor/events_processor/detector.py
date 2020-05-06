@@ -53,7 +53,7 @@ class CoralDetector(Detector):
         self._transform_coords = preprocessor.transform_coords
 
     def detect(self, frame_info: FrameInfo) -> None:
-        monitor_id = frame_info.event_info.event_json['MonitorId']
+        monitor_id = frame_info.event_info.monitor_id
         img = Image.fromarray(frame_info.image)
 
         box = self._calculate_detection_box(frame_info, img, monitor_id)
@@ -70,10 +70,10 @@ class CoralDetector(Detector):
         frame_info.detections = result
 
     def _calculate_detection_box(self, frame_info, img, monitor_id):
-        event_id = frame_info.frame_json['EventId']
-        frame_id = frame_info.frame_json['FrameId']
-        height = int(frame_info.event_info.event_json['Height'])
-        width = int(frame_info.event_info.event_json['Width'])
+        event_id = frame_info.event_id
+        frame_id = frame_info.frame_id
+        height = frame_info.event_info.height
+        width = frame_info.event_info.width
 
         alarm_box = self._alarm_box_reader.read(event_id, frame_id, self._config.excluded_zone_prefix)
         if alarm_box:
@@ -128,7 +128,7 @@ class CoralDetector(Detector):
 
             DetectionRenderer().draw_boxes(frame_info, rect_drawer)
 
-            img.save(f"debug_{frame_info.frame_json['EventId']}_{frame_info.frame_json['FrameId']}.jpg")
+            img.save(f"debug_{frame_info.event_id}_{frame_info.frame_id}.jpg")
 
     def _chunk_rects(self, box, x_chunks, y_chunks):
         rects = []

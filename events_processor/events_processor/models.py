@@ -90,6 +90,7 @@ class Detection:
 @dataclass
 class FrameInfo:
     frame_json: Dict
+    monitor_json: Dict
     image_path: str
     detections: Sequence[Detection] = field(init=False)
     image: Any = field(init=False)
@@ -98,9 +99,15 @@ class FrameInfo:
     chunk_rects: List[Rect] = field(default_factory=list)
 
     def __str__(self):
-        log_dict = dict(self.event_info.event_json)
-        log_dict.update(self.frame_json)
-        return "(monitorId: {MonitorId}, eventId: {EventId}, frameId: {FrameId})".format(**log_dict)
+        return f"(m: {self.monitor_json['Name']}, eid: {self.event_id}, fid: {self.frame_id})"
+
+    @property
+    def frame_id(self):
+        return self.frame_json['FrameId']
+
+    @property
+    def event_id(self):
+        return self.frame_json['EventId']
 
 
 @dataclass(init=True, eq=False)
@@ -115,7 +122,23 @@ class EventInfo:
     lock: Any = field(default_factory=Lock)
 
     def __str__(self) -> str:
-        return "(monitorId: {MonitorId}, eventId: {Id})".format(**self.event_json)
+        return f"(mid: {self.monitor_id}, eid: {self.event_id})"
+
+    @property
+    def event_id(self):
+        return self.event_json['Id']
+
+    @property
+    def monitor_id(self):
+        return self.event_json['MonitorId']
+
+    @property
+    def height(self):
+        return int(self.event_json['Height'])
+
+    @property
+    def width(self):
+        return int(self.event_json['Width'])
 
 
 @dataclass

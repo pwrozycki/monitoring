@@ -17,7 +17,7 @@ class RotatingPreprocessor:
         self._config = config
 
     def preprocess(self, frame_info: FrameInfo) -> None:
-        monitor_id = frame_info.event_info.event_json['MonitorId']
+        monitor_id = frame_info.event_info.monitor_id
         rotation = self._config.rotations.get(monitor_id, 0)
         if rotation != 0:
             frame_info.image = self.rotate_and_expand_image(frame_info.image, rotation)

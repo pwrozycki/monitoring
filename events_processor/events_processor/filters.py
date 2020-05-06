@@ -73,7 +73,7 @@ class DetectionFilter:
         frame_info.detections = result
 
     def _frame_score_insufficient(self, detection: Detection, frame_info: FrameInfo) -> bool:
-        monitor_id = frame_info.event_info.event_json['MonitorId']
+        monitor_id = frame_info.event_info.monitor_id
         if detection.score >= get_config(self._config.movement_indifferent_min_score, monitor_id, 0):
             return False
 
@@ -105,7 +105,7 @@ class DetectionFilter:
         return detection_box, movement_poly, intersection_box
 
     def _detection_area_not_in_range(self, box: Rect, frame_info: FrameInfo) -> bool:
-        monitor_id = frame_info.event_info.event_json['MonitorId']
+        monitor_id = frame_info.event_info.monitor_id
         box_area_percentage = box.area / self._frame_area(frame_info) * 100
         min_box_area_percentage = get_config(self._config.min_box_area_percentage, monitor_id, 0)
         max_box_area_percentage = get_config(self._config.max_box_area_percentage, monitor_id, 100)
@@ -117,7 +117,7 @@ class DetectionFilter:
         return False
 
     def _detection_intersects_excluded_polygon(self, box: Rect, frame_info: FrameInfo) -> bool:
-        monitor_id = frame_info.event_info.event_json['MonitorId']
+        monitor_id = frame_info.event_info.monitor_id
         detection_box = geometry.box(*box.box_tuple)
 
         excluded_polygons = self._config.excluded_polygons.get(monitor_id, [])
@@ -129,7 +129,7 @@ class DetectionFilter:
         return False
 
     def _detection_intersects_excluded_zone_polygon(self, box: Rect, frame_info: FrameInfo) -> bool:
-        monitor_id = frame_info.event_info.event_json['MonitorId']
+        monitor_id = frame_info.event_info.monitor_id
         detection_box = geometry.box(*box.box_tuple)
 
         zone_polygons = self._excluded_zone_polygons.get(monitor_id, [])
@@ -146,7 +146,7 @@ class DetectionFilter:
         return Polygon(self._transform_coords(zone.monitor_id, zone.width, zone.height, pt) for pt in poly.points)
 
     def _detection_contains_excluded_point(self, box: Rect, frame_info: FrameInfo) -> bool:
-        monitor_id = frame_info.event_info.event_json['MonitorId']
+        monitor_id = frame_info.event_info.monitor_id
         detection_box = geometry.box(*box.box_tuple)
 
         excluded_points = self._config.excluded_points.get(monitor_id, [])
@@ -157,7 +157,7 @@ class DetectionFilter:
         return False
 
     def _frame_area(self, frame_info: FrameInfo) -> int:
-        (height, width) = (int(frame_info.event_info.event_json['Height']),
-                           int(frame_info.event_info.event_json['Width']))
+        (height, width) = (frame_info.event_info.width,
+                           frame_info.event_info.height)
         frame_area = width * height
         return frame_area

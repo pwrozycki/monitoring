@@ -51,12 +51,12 @@ class FrameReader:
             return json.loads(response.content)
         return {}
 
-    def get_event_details_json(self, event_id: str) -> Optional[Tuple[Dict, Dict]]:
+    def get_event_details_json(self, event_id: str) -> Optional[Tuple[Dict, Dict, Dict]]:
         query = self._config.event_details_url.format(eventId=event_id)
         response = self._resource_reader.read(query)
         if response:
             data = json.loads(response.content)['event']
-            return data['Event'], data['Frame']
+            return data['Event'], data['Frame'], data['Monitor']
         return None
 
     def events_iter(self) -> Iterable[Dict]:
@@ -77,7 +77,7 @@ class FrameReader:
             details = self.get_event_details_json(event_id)
             if not details:
                 continue
-            (event_json, frames_json) = details
+            (event_json, _, _) = details
             yield event_json
 
     def frames_iter(self, event_ids: Iterable[str]) -> Iterable[FrameInfo]:
@@ -85,13 +85,13 @@ class FrameReader:
             details = self.get_event_details_json(event_id)
             if not details:
                 continue
-            (event_json, frames_json) = details
+            (event_json, frames_json, monitor_json) = details
 
             for frame_json in frames_json:
                 frame_id = frame_json['FrameId']
 
                 file_name = self._get_frame_jpg_path(event_id, event_json, frame_id)
-                yield FrameInfo(frame_json, file_name)
+                yield FrameInfo(frame_json, monitor_json, file_name)
 
     def _get_frame_jpg_path(self, event_id: str, event_json: Dict, frame_id: str) -> str:
         file_name = self._config.frame_jpg_path.format(

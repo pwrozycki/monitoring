@@ -98,6 +98,7 @@ class DetectionNotifier:
     def notify(self, event_info: EventInfo) -> bool:
         mail_dict = {f"Event-{x}": y for (x, y) in event_info.event_json.items()}
         mail_dict.update({f"Frame-{x}": y for (x, y) in event_info.frame_info.frame_json.items()})
+        mail_dict.update({f"Monitor-{x}": y for (x, y) in event_info.frame_info.monitor_json.items()})
         mail_dict['Detection-Score'] = 100 * event_info.frame_score
 
         subject = self._config.subject.format(**mail_dict)

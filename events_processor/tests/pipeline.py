@@ -57,7 +57,11 @@ class ResourceTemplate:
                         'TimeStamp': '2019-08-08 10:00:00',
                         'EventId': event_id,
                     } for x in range(frames)
-                ]
+                ],
+                'Monitor': {
+                    'Id': '1',
+                    'Name': 'SomeMonitor',
+                }
             }
         }
 
