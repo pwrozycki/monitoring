@@ -95,7 +95,7 @@ class FrameInfo:
     event_info: "EventInfo"
     detections: Sequence[Detection] = field(init=False)
     image: Any = field(init=False)
-    alarm_box: Rect = None
+    alarm_box: Rect = field(init=False)
     chunk_rects: List[Rect] = field(default_factory=list)
 
     def __str__(self):

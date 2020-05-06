@@ -16,7 +16,7 @@ from events_processor.models import EventInfo, ZoneInfo, Rect, MonitorInfo
 class TestDetector(Detector):
     @inject
     def __init__(self, alarm_box_reader: AlarmBoxReader, config: ConfigProvider):
-        self.detections: {}
+        self.detections = {}
         self._alarm_box_reader = alarm_box_reader
         self._config = config
 

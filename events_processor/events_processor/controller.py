@@ -51,7 +51,7 @@ class MainController:
             time.sleep(self._config.thread_watchdog_delay)
 
     def _engine_is_stuck(self) -> bool:
-        return self._engine and self._engine.get_pending_processing_seconds() > 60
+        return self._engine is not None and self._engine.get_pending_processing_seconds() > 60
 
     def _any_thread_is_dead(self) -> bool:
         return any(not t.is_alive() for t in self._threads)
