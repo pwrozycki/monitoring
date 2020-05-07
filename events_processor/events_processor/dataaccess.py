@@ -80,4 +80,4 @@ class DBMonitorReader(MonitorReader, QuerySupport):
                    from Monitors m """)
             return cursor.fetchall()
 
-        return [MonitorInfo(id, name) for (id, name) in self.invoke_query(query)]
+        return [MonitorInfo(str(id), name) for (id, name) in self.invoke_query(query)]

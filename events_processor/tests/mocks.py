@@ -105,7 +105,7 @@ class TestAlarmBoxReader(AlarmBoxReader):
 @singleton
 class TestMonitorReader(MonitorReader):
     def read(self) -> Iterable[MonitorInfo]:
-        return []
+        return (MonitorInfo('1', 'SomeMonitor'),)
 
 
 class TestNoOpEngine(Engine):
