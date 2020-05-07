@@ -11,32 +11,36 @@ class DetectionRenderer:
     log = logging.getLogger('events_processor.DetectionRenderer')
 
     def annotate_image(self, frame_info: FrameInfo) -> Any:
+        self.log.debug(f'Rendering detection: {frame_info}')
+
         image = frame_info.image
-        detections = frame_info.detections
-        for (i, detection) in enumerate(detections):
+        for (i, detection) in enumerate(frame_info.detections):
+            discarded = bool(detection.discard_reasons)
+
             box = detection.rect
-            cv2.rectangle(image, box.top_left.tuple, box.bottom_right.tuple, (255, 0, 0), 1)
+            self.draw_rect(image, detection.rect, "blue" if not discarded else "white", 1)
+            self._draw_text(f'{detection.label} {detection.score*100:.0f}%', box, image)
 
-            area_percents = 100 * box.area / Rect(0, 0, *frame_info.image.shape[:2]).area
-            score_percents = 100 * detection.score
-
-            self.log.debug(f'Rendering detection: {frame_info} (index: {i}, '
-                           f'score: {score_percents:.0f}%, area: {area_percents:.2f}%), box: {box}')
-
-            self._draw_text(f'{score_percents:.0f}%', box, image)
-
-        def rect_drawer(box: Rect, color):
-            rect = Rect(*map(int, box.box_tuple))
-            cv2.rectangle(image, rect.top_left.tuple, rect.bottom_right.tuple, getrgb(color), 2)
+        def rect_drawer(box, color):
+            return self.draw_rect(image, box, color, 2)
 
         DetectionRenderer().draw_boxes(frame_info, rect_drawer)
 
+    def draw_rect(self, image, box: Rect, color, thickness):
+        rect = Rect(*map(int, box.box_tuple))
+        cv2.rectangle(image, rect.top_left.tuple, rect.bottom_right.tuple, self.bgr(color), thickness)
+
         return image
+
+    def bgr(self, color):
+        (r,g,b) = getrgb(color)
+        return (b,g,r)
+
 
     def draw_boxes(self, frame_info, rect_drawer):
         if frame_info.alarm_box:
             box = frame_info.alarm_box
-            rect_drawer(box, "red")
+            rect_drawer(box, "blue")
         for (i, r) in enumerate(frame_info.chunk_rects):
             color = COLORS[i % len(COLORS)]
             rect_drawer(r, color)

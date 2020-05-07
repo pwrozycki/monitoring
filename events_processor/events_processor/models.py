@@ -30,6 +30,9 @@ class Rect:
     right: int
     bottom: int
 
+    def __str__(self):
+        return f"Rect({self.left}, {self.top}, {self.right}, {self.bottom})"
+
     @property
     def top_left(self) -> Point:
         return Point(self.left, self.top)
@@ -85,6 +88,27 @@ class Detection:
     rect: Rect
     score: float
     label_id: int
+    label: Optional[str] = None
+    alarm_diff: Optional[float] = None
+    detection_diff: Optional[float] = None
+    detection_area_percent: Optional[float] = None
+    threshold_acceptance_type: Optional[str] = None
+    discard_reasons: List[str] = field(default_factory=list)
+
+    @property
+    def resolution(self):
+        if self.discard_reasons:
+            return f"discarded({','.join(self.discard_reasons)})"
+        else:
+            return f"accepted({self.threshold_acceptance_type})"
+
+    @property
+    def alarm_measurements_str(self):
+        return f"al+{self.alarm_diff}% det+{self.detection_diff}%" if self.alarm_diff else ""
+
+    def __str__(self):
+        return f"{self.resolution} {self.label} {self.score * 100:.0f}% det_box:{self.detection_area_percent:.1f}%" \
+               f" {self.alarm_measurements_str}".strip()
 
 
 @dataclass
@@ -93,13 +117,25 @@ class FrameInfo:
     monitor_json: Dict
     image_path: str
     event_info: "EventInfo"
-    detections: Sequence[Detection] = field(default_factory=list)
     image: Any = None
-    alarm_box: Optional[Rect] = None
     chunk_rects: List[Rect] = field(default_factory=list)
+    detections: Sequence[Detection] = field(default_factory=list)
+    alarm_box: Optional[Rect] = None
 
     def __str__(self):
         return f"(m: {self.monitor_json['Name']}, eid: {self.event_id}, fid: {self.frame_id})"
+
+    @property
+    def detection_str(self):
+        return f"Frame {self.verdict} {self}, " + (f"{[str(d) for d in self.detections]}" if self.detections else "no detections")
+
+    @property
+    def verdict(self):
+        return "accepted" if self.accepted_detections else "discarded"
+
+    @property
+    def accepted_detections(self):
+        return [d for d in self.detections if not d.discard_reasons]
 
     @property
     def frame_id(self):

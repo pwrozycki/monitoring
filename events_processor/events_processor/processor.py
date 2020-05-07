@@ -14,8 +14,9 @@ from events_processor.preprocessor import RotatingPreprocessor
 
 
 def get_frame_score(frame_info: FrameInfo) -> float:
-    if len(frame_info.detections) > 0:
-        return max([p.score for p in frame_info.detections])
+    accepted_detections = frame_info.accepted_detections
+    if len(accepted_detections) > 0:
+        return max([p.score for p in accepted_detections])
     else:
         return 0
 

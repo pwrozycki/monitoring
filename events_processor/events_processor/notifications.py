@@ -99,12 +99,17 @@ class DetectionNotifier:
         mail_dict = {f"Event-{x}": y for (x, y) in event_info.event_json.items()}
         mail_dict.update({f"Frame-{x}": y for (x, y) in event_info.frame_info.frame_json.items()})
         mail_dict.update({f"Monitor-{x}": y for (x, y) in event_info.frame_info.monitor_json.items()})
+        mail_dict.update({f"FrameInfo-{x}": y for (x, y) in obj_to_map(event_info.frame_info).items()})
         mail_dict['Detection-Score'] = 100 * event_info.frame_score
 
         subject = self._config.subject.format(**mail_dict)
         message = self._config.message.format(**mail_dict)
 
         return self._notification_sender.send(event_info, subject, message)
+
+
+def obj_to_map(obj, key_prefix=''):
+    return {key_prefix + key: getattr(obj, key) for key in dir(obj) if not key.startswith('__')}
 
 
 class NotificationWorker(Thread):
