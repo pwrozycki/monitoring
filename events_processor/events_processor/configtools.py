@@ -1,3 +1,4 @@
+import logging
 import re
 from configparser import ConfigParser, ExtendedInterpolation
 from typing import Dict, Callable, Any, Iterable
@@ -20,61 +21,73 @@ def get_config(config_map: Dict,
 
 
 class ConfigProvider(ConfigParser):
+    log = logging.getLogger("events_processor.ConfigProvider")
+
     @inject
     def __init__(self,
                  monitor_reader: MonitorReader):
         super(ConfigParser, self).__init__(interpolation=ExtendedInterpolation())
         self.optionxform = str
         self._monitor_id_for_name = {m.name: m.id for m in monitor_reader.read()}
+        self._recognized_config_map = {}
 
         self.read('events_processor.ini')
         self.reread()
 
     def reread(self):
-        self.event_list_url = self['zm']['event_list_url']
-        self.event_details_url = self['zm']['event_details_url']
-        self.frame_jpg_path = self['zm']['frame_jpg_path']
+        self._recognized_config_map.clear()
 
-        self.notification_delay_seconds = self['timings'].getint('notification_delay_seconds', fallback=0)
-        self.events_window_seconds = self['timings'].getint('events_window_seconds', fallback=600)
-        self.event_loop_seconds = self['timings'].getint('event_loop_seconds', fallback=5)
-        self.frame_read_delay_seconds = self['timings'].getint('frame_read_delay_seconds', fallback=5)
-        self.cache_seconds_buffer = self['timings'].getint('cache_seconds_buffer', fallback=120)
+        self.event_list_url = self._read_property('zm', 'event_list_url')
+        self.event_details_url = self._read_property('zm', 'event_details_url')
+        self.frame_jpg_path = self._read_property('zm', 'frame_jpg_path')
 
-        self.rotations = self._extract('rotating_preprocessor', 'rotate', int)
+        self.notification_delay_seconds = self._read_property('timings', 'notification_delay_seconds', '0', int)
+        self.events_window_seconds = self._read_property('timings', 'events_window_seconds', '600', int)
+        self.event_loop_seconds = self._read_property('timings', 'event_loop_seconds', '5', int)
+        self.frame_read_delay_seconds = self._read_property('timings', 'frame_read_delay_seconds', '5', int)
+        self.cache_seconds_buffer = self._read_property('timings', 'cache_seconds_buffer', '120', int)
 
-        self.detector_model_file = self['coral']['model_file']
-        self.min_score = float(self['coral']['min_score'])
-        self.detection_chunks = self._extract('coral', 'detection_chunks', extract_int_pair)
+        self.rotations = self._read_map('rotating_preprocessor', 'rotate', int)
 
-        self.excluded_zone_prefix = self['detection_filter'].get('excluded_zone_prefix')
-        self.object_labels = self['detection_filter'].get('object_labels', fallback='person').split(',')
-        self.label_file = self['detection_filter']['label_file']
-        self.movement_indifferent_min_score = self._extract('detection_filter', 'movement_indifferent_min_score', float)
-        self.coarse_movement_min_score = self._extract('detection_filter', 'coarse_movement_min_score', float)
-        self.precise_movement_min_score = self._extract('detection_filter', 'precise_movement_min_score', float)
-        self.max_alarm_to_intersect_diff = self._extract('detection_filter', 'max_alarm_to_intersect_diff', float)
-        self.max_detect_to_intersect_diff = self._extract('detection_filter', 'max_detect_to_intersect_diff', float)
-        self.min_box_area_percentage = self._extract('detection_filter', 'min_box_area_percentage', float)
-        self.max_box_area_percentage = self._extract('detection_filter', 'max_box_area_percentage', float)
-        self.excluded_points = self._extract('detection_filter', 'excluded_points', coords_to_points)
-        self.excluded_polygons = self._extract('detection_filter', 'excluded_polygons', coords_to_polygons)
+        self.detector_model_file = self._read_property('coral', 'model_file')
+        self.min_score = self._read_property('coral', 'min_score', float)
+        self.detection_chunks = self._read_map('coral', 'detection_chunks', extract_int_pair)
 
-        self.host = self['mail']['host']
-        self.port = self['mail'].getint('port', fallback=587)
-        self.user = self['mail']['user']
-        self.password = self['mail']['password']
-        self.to_addr = self['mail']['to_addr']
-        self.from_addr = self['mail']['from_addr']
-        self.timeout = self['mail'].getfloat('timeout', fallback=10)
-        self.subject = self['mail']['subject']
-        self.message = re.sub(r'\n\|', '\n', self['mail']['message'])
+        self.excluded_zone_prefix = self._read_property('detection_filter', 'excluded_zone_prefix')
+        self.object_labels = self._read_property('detection_filter', 'object_labels', 'person').split(',')
+        self.label_file = self._read_property('detection_filter', 'label_file')
+        self.coarse_movement_min_score = self._read_map('detection_filter', 'coarse_movement_min_score', float)
+        self.precise_movement_min_score = self._read_map('detection_filter', 'precise_movement_min_score', float)
+        self.max_alarm_to_intersect_diff = self._read_map('detection_filter', 'max_alarm_to_intersect_diff', float)
+        self.max_detect_to_intersect_diff = self._read_map('detection_filter', 'max_detect_to_intersect_diff', float)
+        self.min_box_area_percentage = self._read_map('detection_filter', 'min_box_area_percentage', float)
+        self.max_box_area_percentage = self._read_map('detection_filter', 'max_box_area_percentage', float)
+        self.excluded_points = self._read_map('detection_filter', 'excluded_points', coords_to_points)
+        self.excluded_polygons = self._read_map('detection_filter', 'excluded_polygons', coords_to_polygons)
+        self.movement_indifferent_min_score = \
+            self._read_map('detection_filter', 'movement_indifferent_min_score', float)
 
-        self.frame_processing_threads = self['threading'].getint('frame_processing_threads', fallback=2)
-        self.thread_watchdog_delay = self['threading'].getint('thread_watchdog_delay', fallback=5)
+        self.host = self._read_property('mail', 'host')
+        self.port = self._read_property('mail', 'port', '587', int)
+        self.user = self._read_property('mail', 'user')
+        self.password = self._read_property('mail', 'password')
+        self.to_addr = self._read_property('mail', 'to_addr')
+        self.from_addr = self._read_property('mail', 'from_addr')
+        self.timeout = self._read_property('mail', 'timeout', '10', float)
+        self.subject = self._read_property('mail', 'subject')
+        self.message = re.sub(r'\n\|', '\n', self._read_property('mail', 'message'))
 
-        self.event_ids = [x for x in self['debug'].get('event_ids', fallback='').split(',') if x]
-        self.debug_images = [x for x in self['debug'].get('debug_images', fallback='').split(',') if x]
+        self.frame_processing_threads = self._read_property('threading', 'frame_processing_threads', '2', int)
+        self.thread_watchdog_delay = self._read_property('threading', 'thread_watchdog_delay', '5', int)
+
+        self.event_ids = [x for x in self._read_property('debug', 'event_ids', '').split(',') if x]
+        self.debug_images = [x for x in self._read_property('debug', 'debug_images', '').split(',') if x]
+
+        self._sanity_check_config()
+
+    def _read_property(self, section, property, fallback=None, transform=lambda x: x):
+        self._add_recognized_property(property, section)
+        return transform(self[section].get(property, fallback=fallback))
 
     def _set_config(self,
                     key: str,
@@ -94,12 +107,36 @@ class ConfigProvider(ConfigParser):
 
         if monitor_id:
             dictionary[monitor_id] = transform(value)
+            return True
+        return False
 
-    def _extract(self, section, config_key, transform):
+    def _read_map(self, section, config_key, transform):
+        recognized_section = self._get_recognized_section(section)
+
         d = {}
         for (key, value) in self[section].items():
-            self._set_config(key, value, config_key, d, transform)
+            matched = self._set_config(key, value, config_key, d, transform)
+            if matched:
+                recognized_section.add(key)
+
         return d
+
+    def _sanity_check_config(self):
+        for section in self.sections():
+            parsed_section = self._recognized_config_map.get(section)
+            if parsed_section is None:
+                self.log.warning(f"Unrecognized section: {section}")
+                continue
+
+            for (key, val) in self.items(section):
+                if not key.startswith('_') and key not in parsed_section:
+                    self.log.warning(f"Unrecognized property: {key} in section {section}")
+
+    def _add_recognized_property(self, property, section):
+        self._get_recognized_section(section).add(property)
+
+    def _get_recognized_section(self, section):
+        return self._recognized_config_map.setdefault(section, set())
 
 
 def coords_to_points(string) -> Iterable[Point]:
