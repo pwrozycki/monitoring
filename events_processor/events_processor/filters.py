@@ -84,19 +84,20 @@ class DetectionFilter:
         alarm_rect = frame_info.alarm_box
         if alarm_rect:
             (detection_box, alarm_box, intersection_box) = self._calculate_boxes(alarm_rect, detection)
-            alarm_diff = self.relative_difference_percents(alarm_box.area, intersection_box.area)
-            detection_diff = self.relative_difference_percents(detection_box.area, intersection_box.area)
-            details = f" (alarm>is: {alarm_diff:.0f}, det>is: {detection_diff:.0f}, is: {intersection_box.area:.0f})"
+            if intersection_box.area > INTERSECTION_DISCARDED_THRESHOLD:
+                alarm_diff = self.relative_difference_percents(alarm_box.area, intersection_box.area)
+                detection_diff = self.relative_difference_percents(detection_box.area, intersection_box.area)
+                details = f" (alarm>is: {alarm_diff:.0f}, det>is: {detection_diff:.0f}, is: {intersection_box.area:.0f})"
 
-            if (alarm_diff < get_config(self._config.max_alarm_to_intersect_diff, monitor_id, 50) and
-                    detection_diff < get_config(self._config.max_detect_to_intersect_diff, monitor_id, 50) and
-                    detection.score >= get_config(self._config.precise_movement_min_score, monitor_id, 1)):
-                info.append(f"precise det{details}")
-                return False
+                if (alarm_diff < get_config(self._config.max_alarm_to_intersect_diff, monitor_id, 50) and
+                        detection_diff < get_config(self._config.max_detect_to_intersect_diff, monitor_id, 50) and
+                        detection.score >= get_config(self._config.precise_movement_min_score, monitor_id, 1)):
+                    info.append(f"precise det{details}")
+                    return False
 
-            if detection.score >= get_config(self._config.coarse_movement_min_score, monitor_id, 1):
-                info.append(f"coarse det{details}")
-                return False
+                if detection.score >= get_config(self._config.coarse_movement_min_score, monitor_id, 1):
+                    info.append(f"coarse det{details}")
+                    return False
 
         if detection.score >= get_config(self._config.movement_indifferent_min_score, monitor_id, 0):
             info.append(f"indifferent det{details}")
