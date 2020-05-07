@@ -14,7 +14,7 @@ class DetectionRenderer:
         self.log.debug(f'Rendering detection: {frame_info}')
 
         image = frame_info.image
-        for (i, detection) in enumerate(frame_info.detections):
+        for (i, detection) in enumerate(reversed(frame_info.detections)):
             discarded = bool(detection.discard_reasons)
 
             box = detection.rect
