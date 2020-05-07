@@ -41,16 +41,16 @@ class ConfigProvider(ConfigParser):
         self.event_details_url = self._read_property('zm', 'event_details_url')
         self.frame_jpg_path = self._read_property('zm', 'frame_jpg_path')
 
-        self.notification_delay_seconds = self._read_property('timings', 'notification_delay_seconds', '0', int)
-        self.events_window_seconds = self._read_property('timings', 'events_window_seconds', '600', int)
-        self.event_loop_seconds = self._read_property('timings', 'event_loop_seconds', '5', int)
-        self.frame_read_delay_seconds = self._read_property('timings', 'frame_read_delay_seconds', '5', int)
-        self.cache_seconds_buffer = self._read_property('timings', 'cache_seconds_buffer', '120', int)
+        self.notification_delay_seconds = self._read_property('timings', 'notification_delay_seconds', '0', transform=int)
+        self.events_window_seconds = self._read_property('timings', 'events_window_seconds', '600', transform=int)
+        self.event_loop_seconds = self._read_property('timings', 'event_loop_seconds', '5', transform=int)
+        self.frame_read_delay_seconds = self._read_property('timings', 'frame_read_delay_seconds', '5', transform=int)
+        self.cache_seconds_buffer = self._read_property('timings', 'cache_seconds_buffer', '120', transform=int)
 
         self.rotations = self._read_map('rotating_preprocessor', 'rotate', int)
 
         self.detector_model_file = self._read_property('coral', 'model_file')
-        self.min_score = self._read_property('coral', 'min_score', float)
+        self.min_score = self._read_property('coral', 'min_score', transform=float)
         self.detection_chunks = self._read_map('coral', 'detection_chunks', extract_int_pair)
 
         self.excluded_zone_prefix = self._read_property('detection_filter', 'excluded_zone_prefix')
@@ -68,17 +68,17 @@ class ConfigProvider(ConfigParser):
             self._read_map('detection_filter', 'movement_indifferent_min_score', float)
 
         self.host = self._read_property('mail', 'host')
-        self.port = self._read_property('mail', 'port', '587', int)
+        self.port = self._read_property('mail', 'port', '587', transform=int)
         self.user = self._read_property('mail', 'user')
         self.password = self._read_property('mail', 'password')
         self.to_addr = self._read_property('mail', 'to_addr')
         self.from_addr = self._read_property('mail', 'from_addr')
-        self.timeout = self._read_property('mail', 'timeout', '10', float)
+        self.timeout = self._read_property('mail', 'timeout', '10', transform=float)
         self.subject = self._read_property('mail', 'subject')
         self.message = re.sub(r'\n\|', '\n', self._read_property('mail', 'message'))
 
-        self.frame_processing_threads = self._read_property('threading', 'frame_processing_threads', '2', int)
-        self.thread_watchdog_delay = self._read_property('threading', 'thread_watchdog_delay', '5', int)
+        self.frame_processing_threads = self._read_property('threading', 'frame_processing_threads', '2', transform=int)
+        self.thread_watchdog_delay = self._read_property('threading', 'thread_watchdog_delay', '5', transform=int)
 
         self.event_ids = [x for x in self._read_property('debug', 'event_ids', '').split(',') if x]
         self.debug_images = [x for x in self._read_property('debug', 'debug_images', '').split(',') if x]

@@ -104,7 +104,7 @@ class Detection:
 
     @property
     def alarm_measurements_str(self):
-        return f"al+{self.alarm_diff}% det+{self.detection_diff}%" if self.alarm_diff else ""
+        return f"al+{self.alarm_diff}% det+{self.detection_diff}%" if self.alarm_diff is not None else ""
 
     def __str__(self):
         return f"{self.resolution} {self.label} {self.score * 100:.0f}% det_box:{self.detection_area_percent:.1f}%" \
