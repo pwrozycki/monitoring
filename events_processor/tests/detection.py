@@ -134,8 +134,7 @@ class DetectionTestCase(unittest.TestCase):
                 'rotating_preprocessor': {'rotate1': '90'},
                 'detection_filter': {'movement_indifferent_min_score': '0.9',
                                      'coarse_movement_min_score': '0.85',
-                                     'precise_movement_min_score': '0.3',
-                                     'max_movement_to_intersection_ratio': '4'}
+                                     'precise_movement_min_score': '0.3'}
             },
             alarm_box=Rect(0, 0, 1, 1)
         )

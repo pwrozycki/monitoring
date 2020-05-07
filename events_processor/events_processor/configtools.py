@@ -41,25 +41,24 @@ class ConfigProvider(ConfigParser):
         self.frame_read_delay_seconds = self['timings'].getint('frame_read_delay_seconds', fallback=5)
         self.cache_seconds_buffer = self['timings'].getint('cache_seconds_buffer', fallback=120)
 
-        self.rotations = self.extract_config('rotating_preprocessor', 'rotate', int)
+        self.rotations = self._extract('rotating_preprocessor', 'rotate', int)
 
         self.detector_model_file = self['coral']['model_file']
         self.min_score = float(self['coral']['min_score'])
-        self.detection_chunks = self.extract_config('coral', 'detection_chunks', extract_int_pair)
+        self.detection_chunks = self._extract('coral', 'detection_chunks', extract_int_pair)
 
         self.excluded_zone_prefix = self['detection_filter'].get('excluded_zone_prefix')
         self.object_labels = self['detection_filter'].get('object_labels', fallback='person').split(',')
         self.label_file = self['detection_filter']['label_file']
-        self.movement_indifferent_min_score = self.extract_config('detection_filter', 'movement_indifferent_min_score',
-                                                                  float)
-        self.coarse_movement_min_score = self.extract_config('detection_filter', 'coarse_movement_min_score', float)
-        self.precise_movement_min_score = self.extract_config('detection_filter', 'precise_movement_min_score', float)
-        self.max_movement_to_intersection_ratio = self.extract_config('detection_filter',
-                                                                      'max_movement_to_intersection_ratio', float)
-        self.min_box_area_percentage = self.extract_config('detection_filter', 'min_box_area_percentage', float)
-        self.max_box_area_percentage = self.extract_config('detection_filter', 'max_box_area_percentage', float)
-        self.excluded_points = self.extract_config('detection_filter', 'excluded_points', coords_to_points)
-        self.excluded_polygons = self.extract_config('detection_filter', 'excluded_polygons', coords_to_polygons)
+        self.movement_indifferent_min_score = self._extract('detection_filter', 'movement_indifferent_min_score', float)
+        self.coarse_movement_min_score = self._extract('detection_filter', 'coarse_movement_min_score', float)
+        self.precise_movement_min_score = self._extract('detection_filter', 'precise_movement_min_score', float)
+        self.max_alarm_to_intersect_diff = self._extract('detection_filter', 'max_alarm_to_intersect_diff', float)
+        self.max_detect_to_intersect_diff = self._extract('detection_filter', 'max_detect_to_intersect_diff', float)
+        self.min_box_area_percentage = self._extract('detection_filter', 'min_box_area_percentage', float)
+        self.max_box_area_percentage = self._extract('detection_filter', 'max_box_area_percentage', float)
+        self.excluded_points = self._extract('detection_filter', 'excluded_points', coords_to_points)
+        self.excluded_polygons = self._extract('detection_filter', 'excluded_polygons', coords_to_polygons)
 
         self.host = self['mail']['host']
         self.port = self['mail'].getint('port', fallback=587)
@@ -96,7 +95,7 @@ class ConfigProvider(ConfigParser):
         if monitor_id:
             dictionary[monitor_id] = transform(value)
 
-    def extract_config(self, section, config_key, transform):
+    def _extract(self, section, config_key, transform):
         d = {}
         for (key, value) in self[section].items():
             self._set_config(key, value, config_key, d, transform)

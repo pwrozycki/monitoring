@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from queue import Queue
 from threading import Lock
-from typing import Any, Sequence, Dict, Tuple, NewType, Iterable, List
+from typing import Any, Sequence, Dict, Tuple, NewType, Iterable, List, Optional
 
 from shapely import geometry
 
@@ -93,9 +93,9 @@ class FrameInfo:
     monitor_json: Dict
     image_path: str
     event_info: "EventInfo"
-    detections: Sequence[Detection] = field(init=False)
-    image: Any = field(init=False)
-    alarm_box: Rect = field(init=False)
+    detections: Sequence[Detection] = field(default_factory=list)
+    image: Any = None
+    alarm_box: Optional[Rect] = None
     chunk_rects: List[Rect] = field(default_factory=list)
 
     def __str__(self):
