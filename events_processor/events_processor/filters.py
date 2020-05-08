@@ -44,7 +44,7 @@ class DetectionFilter:
             self._detection_intersects_excluded_zone_polygon(detection, frame_info)
             self._detection_area_not_in_range(detection, frame_info)
 
-        self.log.debug(frame_info.detection_str)
+        self.log.debug(frame_info.detections_str)
 
     def _label_incorrect(self, detection: Detection):
         detection.label = self._labels[detection.label_id]

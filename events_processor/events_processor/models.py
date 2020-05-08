@@ -106,10 +106,6 @@ class Detection:
     def alarm_measurements_str(self):
         return f"al+{self.alarm_diff}% det+{self.detection_diff}%" if self.alarm_diff is not None else ""
 
-    def __str__(self):
-        return f"{self.resolution} {self.label} {self.score * 100:.0f}% det_box:{self.detection_area_percent:.1f}%" \
-               f" {self.alarm_measurements_str}".strip()
-
 
 @dataclass
 class FrameInfo:
@@ -126,8 +122,20 @@ class FrameInfo:
         return f"(m: {self.monitor_json['Name']}, eid: {self.event_id}, fid: {self.frame_id})"
 
     @property
-    def detection_str(self):
-        return f"Frame {self.verdict} {self}, " + (f"{[str(d) for d in self.detections]}" if self.detections else "no detections")
+    def detections_str(self):
+        return f"Frame {self.verdict} {self}, " + (
+            f"{[self._detection_str(d) for d in self.detections]}" if self.detections else "no detections")
+
+    def _detection_str(self, det: Detection):
+        return f"{det.resolution} {det.label} {det.score * 100:.0f}% det_box:{det.detection_area_percent:.2f}%" \
+               f" {self._det_alarm_str(det)}".strip()
+
+    def _det_alarm_str(self, det):
+        return f"al_box:{self._alarm_box_perc():.2f}% al+{det.alarm_diff}% det+{det.detection_diff}%" if det.alarm_diff is not None else ""
+
+    def _alarm_box_perc(self):
+        (h, w, _) = self.image.shape
+        return self.alarm_box.area / (h * w) * 100
 
     @property
     def verdict(self):
