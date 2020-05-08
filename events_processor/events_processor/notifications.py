@@ -119,6 +119,7 @@ class NotificationWorker(Thread):
     def __init__(self,
                  notification_queue: NotificationQueue,
                  detection_notifier: DetectionNotifier,
+                 detection_renderer: DetectionRenderer,
                  system_time: SystemTime,
                  config: ConfigProvider):
         super().__init__()
@@ -127,7 +128,7 @@ class NotificationWorker(Thread):
         self._system_time = system_time
 
         self._detection_notifier = detection_notifier
-        self._annotate_image = DetectionRenderer().annotate_image
+        self._detection_renderer = detection_renderer
 
         self._notification_queue = notification_queue
         self._notifications: Set[EventInfo] = set()
@@ -163,7 +164,7 @@ class NotificationWorker(Thread):
         if event_info.notification_sent:
             self._notifications.remove(event_info)
         else:
-            self._annotate_image(event_info.frame_info)
+            self._detection_renderer.annotate_image(event_info.frame_info)
             notification_succeeded = self._detection_notifier.notify(event_info)
             if notification_succeeded:
                 with event_info.lock:

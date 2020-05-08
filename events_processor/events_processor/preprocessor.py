@@ -36,7 +36,7 @@ class RotatingPreprocessor:
             return point
         rotation_matrix = self._get_rotation_matrix(angle, w, h)[2]
         result = rotation_matrix.dot((point.x, point.y, 1))
-        return Point(*result)
+        return Point(*map(int, result))
 
     @staticmethod
     def _get_rotation_matrix(angle: float, w: int, h: int) -> Tuple[int, int, Any]:

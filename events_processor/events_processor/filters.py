@@ -25,14 +25,6 @@ class DetectionFilter:
         self._transform_coords = preprocessor.transform_coords
         self._zone_reader = zone_reader
         self._config = config
-        self._config_parse()
-
-    def _config_parse(self) -> None:
-        self._excluded_zone_polygons = {}
-        for zone in self._zone_reader.read(self._config.excluded_zone_prefix):
-            polys = coords_to_polygons(zone.coords.replace(' ', ','))
-            zone_polys = [ZonePolygon(zone, poly) for poly in polys]
-            self._excluded_zone_polygons.setdefault(zone.monitor_id, []).extend(zone_polys)
 
     def _read_labels(self) -> Dict[int, str]:
         with open(self._config.label_file, 'r', encoding="utf-8") as f:
@@ -118,7 +110,7 @@ class DetectionFilter:
         monitor_id = frame_info.event_info.monitor_id
         detection_box = geometry.box(*detection.rect.box_tuple)
 
-        zone_polygons = self._excluded_zone_polygons.get(monitor_id, [])
+        zone_polygons = self._config.excluded_zone_polygons.get(monitor_id, [])
         for zone_poly in zone_polygons:
             polygon = self._transformed_poly(zone_poly.zone, zone_poly.polygon)
             if detection_box.intersects(polygon.shapely_poly):

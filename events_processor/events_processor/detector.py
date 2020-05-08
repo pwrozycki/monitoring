@@ -13,6 +13,7 @@ from events_processor.interfaces import Detector, Engine, AlarmBoxReader
 from events_processor.models import FrameInfo, Rect, Detection
 from events_processor.preprocessor import RotatingPreprocessor
 from events_processor.renderer import DetectionRenderer
+from events_processor.shapeutils import bounding_box
 
 
 class SynchronizedDetectionEngine(Engine):
@@ -46,11 +47,13 @@ class CoralDetector(Detector):
                  config: ConfigProvider,
                  engine: SynchronizedDetectionEngine,
                  alarm_box_reader: AlarmBoxReader,
-                 preprocessor: RotatingPreprocessor):
+                 preprocessor: RotatingPreprocessor,
+                 detection_renderer: DetectionRenderer):
         self._config = config
         self._engine = engine
         self._alarm_box_reader = alarm_box_reader
         self._transform_coords = preprocessor.transform_coords
+        self._detection_renderer = detection_renderer
 
     def detect(self, frame_info: FrameInfo) -> None:
         monitor_id = frame_info.event_info.monitor_id
@@ -79,20 +82,11 @@ class CoralDetector(Detector):
         if alarm_box:
             transformed_points = (self._transform_coords(monitor_id, width, height, pt)
                                   for pt in alarm_box.points)
-            box = self._bounding_box(transformed_points)
+            box = bounding_box(transformed_points)
             frame_info.alarm_box = box
         else:
             box = Rect(0, 0, img.width, img.height)
         return box
-
-    def _bounding_box(self, transformed_points):
-        left = right = top = bottom = None
-        for pt in transformed_points:
-            left = min(left, pt.x) if left else pt.x
-            right = max(right, pt.x) if right else pt.x
-            top = min(top, pt.y) if top else pt.y
-            bottom = max(bottom, pt.y) if bottom else pt.y
-        return Rect(left, top, right, bottom)
 
     def _calculate_chunk_rects(self, box, img, monitor_id):
         x_chunks, y_chunks = self._calculate_optimal_chunks_number(box, monitor_id)
@@ -126,7 +120,7 @@ class CoralDetector(Detector):
             def rect_drawer(box, color):
                 dw.line([pt.tuple for pt in (box.points * 2)[:5]], fill=color, width=4)
 
-            DetectionRenderer().draw_boxes(frame_info, rect_drawer)
+            self._detection_renderer.draw_boxes(frame_info, rect_drawer)
 
             img.save(f"debug_{frame_info.event_id}_{frame_info.frame_id}.jpg")
 

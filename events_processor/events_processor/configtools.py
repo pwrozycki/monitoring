@@ -5,8 +5,8 @@ from typing import Dict, Callable, Any, Iterable
 
 from injector import inject
 
-from events_processor.interfaces import MonitorReader
-from events_processor.models import Point, Polygon
+from events_processor.interfaces import MonitorReader, ZoneReader
+from events_processor.models import Point, Polygon, ZonePolygon
 
 
 def get_config(config_map: Dict,
@@ -25,23 +25,28 @@ class ConfigProvider(ConfigParser):
 
     @inject
     def __init__(self,
-                 monitor_reader: MonitorReader):
+                 monitor_reader: MonitorReader,
+                 zone_reader: ZoneReader):
         super(ConfigParser, self).__init__(interpolation=ExtendedInterpolation())
+        self._monitor_reader = monitor_reader
+        self._zone_reader = zone_reader
         self.optionxform = str
-        self._monitor_id_for_name = {m.name: m.id for m in monitor_reader.read()}
-        self._recognized_config_map = {}
+
 
         self.read('events_processor.ini')
         self.reread()
 
     def reread(self):
-        self._recognized_config_map.clear()
+        self._recognized_config_map = {}
+
+        self._monitor_id_for_name = {m.name: m.id for m in self._monitor_reader.read()}
 
         self.event_list_url = self._read_property('zm', 'event_list_url')
         self.event_details_url = self._read_property('zm', 'event_details_url')
         self.frame_jpg_path = self._read_property('zm', 'frame_jpg_path')
 
-        self.notification_delay_seconds = self._read_property('timings', 'notification_delay_seconds', '0', transform=int)
+        self.notification_delay_seconds = \
+            self._read_property('timings', 'notification_delay_seconds', '0', transform=int)
         self.events_window_seconds = self._read_property('timings', 'events_window_seconds', '600', transform=int)
         self.event_loop_seconds = self._read_property('timings', 'event_loop_seconds', '5', transform=int)
         self.frame_read_delay_seconds = self._read_property('timings', 'frame_read_delay_seconds', '5', transform=int)
@@ -82,6 +87,12 @@ class ConfigProvider(ConfigParser):
 
         self.event_ids = [x for x in self._read_property('debug', 'event_ids', '').split(',') if x]
         self.debug_images = [x for x in self._read_property('debug', 'debug_images', '').split(',') if x]
+
+        self.excluded_zone_polygons = {}
+        for zone in self._zone_reader.read(self.excluded_zone_prefix):
+            polys = coords_to_polygons(zone.coords.replace(' ', ','))
+            zone_polys = [ZonePolygon(zone, poly) for poly in polys]
+            self.excluded_zone_polygons.setdefault(zone.monitor_id, []).extend(zone_polys)
 
         self._sanity_check_config()
 
