@@ -16,8 +16,8 @@ class DetectionTestCase(unittest.TestCase):
     def test_detection_picks_frame_with_higher_score(self):
         notifications = run_pipeline(
             detections={
-                0: [TestDetection(score=0.8)],
-                2: [TestDetection(score=0.9)],
+                '0': [TestDetection(score=0.8)],
+                '2': [TestDetection(score=0.9)],
             },
             events=[
                 ResourceTemplate.event_template(end_time=None),
@@ -34,7 +34,7 @@ class DetectionTestCase(unittest.TestCase):
     def _test_detection_excluded_point(self, detection, exclusion):
         notifications = run_pipeline(
             detections={
-                0: [TestDetection(bounding_box=np.array(detection))],
+                '0': [TestDetection(bounding_box=np.array(detection))],
             },
             config_updates={
                 'detection_filter': {'excluded_points1': exclusion}
@@ -53,7 +53,7 @@ class DetectionTestCase(unittest.TestCase):
     def test_detection_excluded_polygons_within_detection(self):
         notifications = run_pipeline(
             detections={
-                0: [TestDetection(bounding_box=np.array([1, 1, 50, 50]))],
+                '0': [TestDetection(bounding_box=np.array([1, 1, 50, 50]))],
             },
             config_updates={
                 'detection_filter': {'excluded_polygons1': '2,2,3,3,4,4'}
@@ -73,7 +73,7 @@ class DetectionTestCase(unittest.TestCase):
     def _test_detection_excluded_zone_polygons(self, excluded_zone, detection):
         notifications = run_pipeline(
             detections={
-                0: [TestDetection(score=0.4, bounding_box=np.array(detection))],
+                '0': [TestDetection(score=0.4, bounding_box=np.array(detection))],
             },
             zones=(ZoneInfo('1', 1000, 1000, 'exclusion', excluded_zone),)
         )
@@ -82,7 +82,7 @@ class DetectionTestCase(unittest.TestCase):
     def test_detection_excluded_zone_polygons_within_detection_rotation(self):
         notifications = run_pipeline(
             detections={
-                0: [TestDetection(score=0.4, bounding_box=np.array([0, 1000, 1, 999]))],
+                '0': [TestDetection(score=0.4, bounding_box=np.array([0, 1000, 1, 999]))],
             },
             config_updates={
                 'rotating_preprocessor': {'rotate1': '90'},
@@ -95,7 +95,7 @@ class DetectionTestCase(unittest.TestCase):
     def test_detection_no_movement_too_small_score(self):
         notifications = run_pipeline(
             detections={
-                0: [TestDetection(bounding_box=np.array([0, 1, 50, 50]))],
+                '0': [TestDetection(bounding_box=np.array([0, 1, 50, 50]))],
             },
             config_updates={
                 'detection_filter': {'movement_indifferent_min_score': '0.9'}
@@ -107,7 +107,7 @@ class DetectionTestCase(unittest.TestCase):
     def _test_detection_coarse_movement(self, score):
         notifications = run_pipeline(
             detections={
-                0: [TestDetection(score=score, bounding_box=np.array([1, 1, 50, 50]))],
+                '0': [TestDetection(score=score, bounding_box=np.array([1, 1, 50, 50]))],
             },
             config_updates={
                 'detection_filter': {'movement_indifferent_min_score': '0.9',
@@ -128,7 +128,7 @@ class DetectionTestCase(unittest.TestCase):
     def test_detection_precise_movement_rotation(self):
         notifications = run_pipeline(
             detections={
-                0: [TestDetection(score=0.4, bounding_box=np.array([0, 1000, 1, 999]))],
+                '0': [TestDetection(score=0.4, bounding_box=np.array([0, 1000, 1, 999]))],
             },
             config_updates={
                 'rotating_preprocessor': {'rotate1': '90'},
@@ -143,13 +143,13 @@ class DetectionTestCase(unittest.TestCase):
     def _test_detection_precise_movement(self, score=0.4):
         notifications = run_pipeline(
             detections={
-                0: [TestDetection(score=score, bounding_box=np.array([1, 1, 50, 50]))],
+                '0': [TestDetection(score=score, bounding_box=np.array([1, 1, 50, 50]))],
             },
             config_updates={
                 'detection_filter': {'movement_indifferent_min_score': '0.9',
                                      'coarse_movement_min_score': '0.85',
                                      'precise_movement_min_score': '0.3',
-                                     'max_movement_to_intersection_ratio': '4'}
+                                     'max_alarm_to_intersect_diff': '75'}
             },
             alarm_box=Rect(1, 1, 50, 50)
         )

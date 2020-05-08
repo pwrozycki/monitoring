@@ -23,7 +23,7 @@ class ResourceTemplate:
         return {
             'events': [{
                 'Event': {
-                    'Id': event_id,
+                    'Id': str(event_id),
                     'EndTime': end_time,
                     'MonitorId': monitor_id,
                     'Emailed': '0',
@@ -39,8 +39,8 @@ class ResourceTemplate:
                 }
             }],
             'pagination': {
-                'page': 1,
-                'pageCount': 1
+                'page': '1',
+                'pageCount': '1'
             }
         }
 
@@ -51,11 +51,11 @@ class ResourceTemplate:
                 'Event': cls.event_template(event_id, end_time)['events'][0]['Event'],
                 'Frame': [
                     {
-                        'Id': x,
-                        'FrameId': x,
+                        'Id': 'x',
+                        'FrameId': str(x),
                         'Type': 'Alarm',
                         'TimeStamp': '2019-08-08 10:00:00',
-                        'EventId': event_id,
+                        'EventId': str(event_id),
                     } for x in range(frames)
                 ],
                 'Monitor': {
@@ -74,9 +74,13 @@ def run_pipeline(detections=None,
                  config_updates=None,
                  alarm_box=None,
                  zones: Iterable[ZoneInfo] = ()):
-    detections = detections if detections else {0: [TestDetection(score=score, bounding_box=np.array([1, 1, 50, 50]))]}
+    detections = detections if detections else {
+        '0': [TestDetection(score=score, bounding_box=np.array([1, 1, 50, 50]))]}
 
     injector = Injector([AppBindingsModule, TestBindingsModule])
+
+    zone_reader = injector.get(ZoneReader)
+    zone_reader.zones = zones
 
     config = injector.get(ConfigProvider)
     if config_updates:
@@ -84,17 +88,15 @@ def run_pipeline(detections=None,
             config[key].update(config_updates[key])
         config.reread()
 
-    detector = injector.get(Detector)
-    sender = injector.get(NotificationSender)
-    zone_reader = injector.get(ZoneReader)
     alarm_box_reader = injector.get(AlarmBoxReader)
-    resource_reader = injector.get(ResourceReader)
-
-    detector.detections = {1: detections} if detections else {}
-    zone_reader.zones = zones
     alarm_box_reader.box = alarm_box
+
+    resource_reader = injector.get(ResourceReader)
     resource_reader.events = events
     resource_reader.frames = frames
+
+    detector = injector.get(Detector)
+    detector.detections = {'1': detections} if detections else {}
 
     controller = injector.get(MainController)
 
@@ -103,4 +105,5 @@ def run_pipeline(detections=None,
     controller.stop()
     time.sleep(0.2)
 
+    sender = injector.get(NotificationSender)
     return list(sender.notifications.keys())

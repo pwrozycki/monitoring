@@ -4,7 +4,7 @@ import time
 from typing import Any, Iterable, Optional
 
 import numpy as np
-from injector import singleton, inject
+from injector import inject
 
 from events_processor.configtools import ConfigProvider
 from events_processor.interfaces import Detector, ResourceReader, NotificationSender, ImageReader, SystemTime, \
@@ -12,7 +12,6 @@ from events_processor.interfaces import Detector, ResourceReader, NotificationSe
 from events_processor.models import EventInfo, ZoneInfo, Rect, MonitorInfo
 
 
-@singleton
 class TestDetector(Detector):
     @inject
     def __init__(self, alarm_box_reader: AlarmBoxReader, config: ConfigProvider):
@@ -28,7 +27,6 @@ class TestDetector(Detector):
         frame_info.detections = self.detections.get(event_id, {}).get(frame_id, [])
 
 
-@singleton
 class TestResourceReader(ResourceReader):
     def __init__(self):
         self._event_list_invocation = None
@@ -53,7 +51,6 @@ class TestResourceReader(ResourceReader):
         return response
 
 
-@singleton
 class TestSender(NotificationSender):
     def __init__(self):
         self.notifications = {}
@@ -64,7 +61,6 @@ class TestSender(NotificationSender):
         return True
 
 
-@singleton
 class TestImageReader(ImageReader):
     def __init__(self):
         pass
@@ -75,7 +71,6 @@ class TestImageReader(ImageReader):
         return img
 
 
-@singleton
 class TestTime(SystemTime):
     def __init__(self):
         pass
@@ -84,7 +79,6 @@ class TestTime(SystemTime):
         time.sleep(t / 50)
 
 
-@singleton
 class TestZoneReader(ZoneReader):
     def __init__(self):
         self.zones: Iterable[ZoneInfo] = ()
@@ -93,7 +87,6 @@ class TestZoneReader(ZoneReader):
         return self.zones
 
 
-@singleton
 class TestAlarmBoxReader(AlarmBoxReader):
     def __init__(self):
         self.box: Optional[Rect] = None
@@ -102,7 +95,6 @@ class TestAlarmBoxReader(AlarmBoxReader):
         return self.box
 
 
-@singleton
 class TestMonitorReader(MonitorReader):
     def read(self) -> Iterable[MonitorInfo]:
         return (MonitorInfo('1', 'SomeMonitor'),)
