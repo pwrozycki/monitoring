@@ -3,7 +3,7 @@ import logging
 import time
 from datetime import datetime, timedelta
 from threading import Thread
-from typing import Dict, Optional, Tuple, Iterable, List
+from typing import Dict, Optional, Tuple, Iterable
 
 import requests
 from cachetools import TTLCache
@@ -122,7 +122,6 @@ class FrameReaderWorker(Thread):
         self._frame_queue = frame_queue
         event_ttl = config.events_window_seconds + config.cache_seconds_buffer
         self._recent_events = TTLCache(maxsize=10000000, ttl=event_ttl)
-        self._frames_added_to_queue = TTLCache(maxsize=10000000, ttl=event_ttl)
 
         self._frame_reader = frame_reader
         if config.event_ids:
@@ -171,24 +170,18 @@ class FrameReaderWorker(Thread):
                 if frame_info.type != 'Alarm':
                     continue
 
-                key = f'{frame_info.event_id}_{frame_info.frame_id}'
-                if key in self._frames_added_to_queue:
+                if frame_info.frame_id in event_info.retrieved_frame_ids:
                     continue
 
                 if self._frame_data_has_settled(frame_info):
                     self._frame_queue.put(frame_info)
-                    self._frames_added_to_queue[key] = 1
+                    event_info.retrieved_frame_ids.add(frame_info.frame_id)
                 else:
                     pending_frames = True
 
             if not pending_frames and event_info.end_time is not None:
                 event_info.all_frames_were_read = True
-                if not event_info.notification_status.was_submitted:
-                    event_info.release_frame_images()
 
     def _frame_data_has_settled(self, frame_info):
         frame_timestamp = datetime.strptime(frame_info.timestamp, '%Y-%m-%d %H:%M:%S')
         return datetime.now() >= frame_timestamp + timedelta(seconds=self._config.frame_read_delay_seconds)
-
-
-

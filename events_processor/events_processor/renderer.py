@@ -48,7 +48,7 @@ class DetectionRenderer:
         width = frame_info.event_info.width
         height = frame_info.event_info.height
 
-        return [self._preprocessor.transform_coords(monitor_id, width , height, pt) for pt in pts]
+        return [self._preprocessor.transform_coords(monitor_id, width, height, pt) for pt in pts]
 
     def draw_rect(self, image, box: Rect, color, thickness):
         rect = Rect(*map(int, box.box_tuple))

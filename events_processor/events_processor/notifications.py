@@ -170,7 +170,7 @@ class NotificationWorker(Thread):
         notification_succeeded = self._detection_notifier.notify(notification_frame)
         if notification_succeeded:
             event_info.notification_status = NotificationStatus.SENT
-            event_info.release_frame_images()
+            event_info.release_resources()
             self._notifications.remove(event_info)
         else:
             self.log.error("Notification error, throttling")

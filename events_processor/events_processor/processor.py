@@ -58,19 +58,24 @@ class FrameProcessorWorker(Thread):
             if frame_info.event_info.notification_status.was_sending:
                 self.log.info(f"Notification already sent for event: {frame_info.event_info}, "
                               f"skipping processing of frame: {frame_info}")
-                continue
+            else:
+                frame_info.image = self._image_reader.read(frame_info.image_path)
+                if frame_info.image is None:
+                    self.log.error(f"Could not read frame image, skipping frame {frame_info}")
 
-            frame_info.image = self._image_reader.read(frame_info.image_path)
-            if frame_info.image is None:
-                self.log.error(f"Could not read frame image, skipping frame {frame_info}")
+                for action in (self._preprocessor.preprocess,
+                               self._detector.detect,
+                               self._detection_filter.filter_detections,
+                               self._calculate_frame_score,
+                               self._record_event_frame):
+                    if action:
+                        action(frame_info)
 
-            for action in (self._preprocessor.preprocess,
-                           self._detector.detect,
-                           self._detection_filter.filter_detections,
-                           self._calculate_frame_score,
-                           self._record_event_frame):
-                if action:
-                    action(frame_info)
+            event_info = frame_info.event_info
+            with event_info.lock:
+                event_info.processed_frame_ids.add(frame_info.frame_id)
+                if event_info.all_frames_were_read_and_processed_none_submitted():
+                    event_info.release_resources()
 
         self.log.info(f"Terminating")
 
@@ -85,15 +90,18 @@ class FrameProcessorWorker(Thread):
     def _record_event_frame(self, frame_info: FrameInfo) -> None:
         event_info = frame_info.event_info
         with event_info.lock:
-            if frame_info.score > 0 and not event_info.notification_status.was_sending:
-                event_info.candidate_frames.append(frame_info)
-                event_info.release_less_scored_frames_images()
+            if frame_info.score > 0:
+                if not event_info.notification_status.was_sending:
+                    event_info.candidate_frames.append(frame_info)
+                    event_info.release_less_scored_frames_images()
 
-                min_accepted = get_config(self._config.min_accepted_frames, event_info.monitor_id, 1)
-                n_accepted = len(event_info.candidate_frames)
+                    min_accepted = get_config(self._config.min_accepted_frames, event_info.monitor_id, 1)
+                    n_accepted = len(event_info.candidate_frames)
 
-                if n_accepted >= min_accepted and not event_info.notification_status.was_submitted:
-                    self._submit_notification(event_info)
+                    if n_accepted >= min_accepted and not event_info.notification_status.was_submitted:
+                        self._submit_notification(event_info)
+            else:
+                frame_info.image = None
 
     def _submit_notification(self, event_info: EventInfo):
         event_info.notification_submission_time = time.monotonic()

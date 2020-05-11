@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from queue import Queue
 from threading import Lock
-from typing import Any, Sequence, Dict, Tuple, NewType, Iterable, List, Optional
+from typing import Any, Sequence, Dict, Tuple, NewType, Iterable, List, Optional, Set
 
 from shapely import geometry
 
@@ -176,7 +176,7 @@ class NotificationStatus(Enum):
 
     @property
     def was_sending(self):
-        return self in [ self.SENDING, self.SENT]
+        return self in [self.SENDING, self.SENT]
 
     @property
     def was_sent(self):
@@ -193,6 +193,8 @@ class EventInfo:
     all_frames_were_read: bool = False
     lock: Any = field(default_factory=Lock)
     candidate_frames: List[FrameInfo] = field(default_factory=list)
+    retrieved_frame_ids: Set[str] = field(default_factory=set)
+    processed_frame_ids: Set[str] = field(default_factory=set)
 
     def __str__(self) -> str:
         return f"(mid: {self.monitor_id}, eid: {self.event_id})"
@@ -224,16 +226,22 @@ class EventInfo:
     def emailed(self):
         return self.event_json['Emailed'] == '1'
 
-    def release_frame_images(self):
-        for frame in self.candidate_frames:
-            frame.image = None
+    def all_frames_were_read_and_processed_none_submitted(self):
+        return (self.all_frames_were_read and not self.notification_status.was_submitted
+                and len(self.processed_frame_ids) == len(self.retrieved_frame_ids))
 
+    def release_resources(self):
+        self.candidate_frames.clear()
+        self.candidate_frames.clear()
+        self.processed_frame_ids.clear()
+        self.retrieved_frame_ids.clear()
 
     def release_less_scored_frames_images(self):
         max_score_frame = self.max_score_frame()
         for frame in self.candidate_frames:
             if frame != max_score_frame:
                 frame.image = None
+
 
 @dataclass
 class ZoneInfo:
