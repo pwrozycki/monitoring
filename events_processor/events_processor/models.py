@@ -167,7 +167,20 @@ class FrameInfo:
 class NotificationStatus(Enum):
     NONE = auto()
     SUBMITTED = auto()
+    SENDING = auto()
     SENT = auto()
+
+    @property
+    def was_submitted(self):
+        return self in [self.SUBMITTED, self.SENDING, self.SENT]
+
+    @property
+    def was_sending(self):
+        return self in [ self.SENDING, self.SENT]
+
+    @property
+    def was_sent(self):
+        return self == self.SENT
 
 
 @dataclass(init=True, eq=False)
@@ -184,13 +197,8 @@ class EventInfo:
     def __str__(self) -> str:
         return f"(mid: {self.monitor_id}, eid: {self.event_id})"
 
-    @property
-    def notification_sent(self) -> bool:
-        return self.notification_status == NotificationStatus.SENT
-
-    @property
-    def notification_was_submitted(self) -> bool:
-        return self.notification_status in (NotificationStatus.SENT, NotificationStatus.SUBMITTED)
+    def max_score_frame(self) -> FrameInfo:
+        return max(self.candidate_frames, key=lambda frame: frame.score)
 
     @property
     def event_id(self):
@@ -216,6 +224,16 @@ class EventInfo:
     def emailed(self):
         return self.event_json['Emailed'] == '1'
 
+    def release_frame_images(self):
+        for frame in self.candidate_frames:
+            frame.image = None
+
+
+    def release_less_scored_frames_images(self):
+        max_score_frame = self.max_score_frame()
+        for frame in self.candidate_frames:
+            if frame != max_score_frame:
+                frame.image = None
 
 @dataclass
 class ZoneInfo:

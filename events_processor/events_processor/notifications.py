@@ -163,13 +163,14 @@ class NotificationWorker(Thread):
 
     def _send_notification(self, event_info: EventInfo) -> None:
         with event_info.lock:
-            notification_frame = max(event_info.candidate_frames, key=lambda frame: frame.score)
+            notification_frame = event_info.max_score_frame()
+            event_info.notification_status = NotificationStatus.SENDING
 
         self._detection_renderer.annotate_image(notification_frame)
         notification_succeeded = self._detection_notifier.notify(notification_frame)
         if notification_succeeded:
             event_info.notification_status = NotificationStatus.SENT
-            event_info.candidate_frames.clear()
+            event_info.release_frame_images()
             self._notifications.remove(event_info)
         else:
             self.log.error("Notification error, throttling")

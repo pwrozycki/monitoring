@@ -152,7 +152,7 @@ class FrameReaderWorker(Thread):
             event_info = self._recent_events.setdefault(event_id, EventInfo())
             event_info.event_json = event_json
 
-            if event_info.all_frames_were_read or event_info.notification_sent:
+            if event_info.all_frames_were_read or event_info.notification_status.was_sending:
                 continue
 
             if event_info.emailed and self._skip_mailed:
@@ -183,8 +183,8 @@ class FrameReaderWorker(Thread):
 
             if not pending_frames and event_info.end_time is not None:
                 event_info.all_frames_were_read = True
-                if not event_info.notification_was_submitted:
-                    event_info.candidate_frames.clear()
+                if not event_info.notification_status.was_submitted:
+                    event_info.release_frame_images()
 
     def _frame_data_has_settled(self, frame_info):
         frame_timestamp = datetime.strptime(frame_info.timestamp, '%Y-%m-%d %H:%M:%S')
