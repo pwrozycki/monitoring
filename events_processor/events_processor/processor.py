@@ -7,18 +7,11 @@ from typing import Any
 import cv2
 from injector import inject
 
+from events_processor.configtools import get_config, ConfigProvider
 from events_processor.filters import DetectionFilter
 from events_processor.interfaces import Detector, ImageReader
-from events_processor.models import FrameInfo, FrameQueue, NotificationQueue
+from events_processor.models import FrameInfo, FrameQueue, NotificationQueue, NotificationStatus
 from events_processor.preprocessor import RotatingPreprocessor
-
-
-def get_frame_score(frame_info: FrameInfo) -> float:
-    accepted_detections = frame_info.accepted_detections
-    if len(accepted_detections) > 0:
-        return max([p.score for p in accepted_detections])
-    else:
-        return 0
 
 
 class FSImageReader(ImageReader):
@@ -37,7 +30,8 @@ class FrameProcessorWorker(Thread):
                  detector: Detector,
                  image_reader: ImageReader,
                  detection_filter: DetectionFilter,
-                 preprocessor: RotatingPreprocessor):
+                 preprocessor: RotatingPreprocessor,
+                 config: ConfigProvider):
 
         super().__init__()
         self._stop_requested = False
@@ -47,8 +41,8 @@ class FrameProcessorWorker(Thread):
         self._detector = detector
         self._detection_filter = detection_filter
         self._preprocessor = preprocessor
+        self._config = config
 
-        self._calculate_score = get_frame_score
         self._image_reader = image_reader
 
     def _read_image_from_fs(self, file_name: str) -> Any:
@@ -73,6 +67,7 @@ class FrameProcessorWorker(Thread):
             for action in (self._preprocessor.preprocess,
                            self._detector.detect,
                            self._detection_filter.filter_detections,
+                           self._calculate_frame_score,
                            self._record_event_frame):
                 if action:
                     action(frame_info)
@@ -83,16 +78,20 @@ class FrameProcessorWorker(Thread):
         self._stop_requested = True
         self._frame_queue.put(None)
 
+    def _calculate_frame_score(self, frame_info: FrameInfo) -> None:
+        accepted_detections = frame_info.accepted_detections
+        frame_info.score = max([p.score for p in accepted_detections], default=0)
+
     def _record_event_frame(self, frame_info: FrameInfo) -> None:
         event_info = frame_info.event_info
+        if frame_info.score > 0:
+            with event_info.lock:
+                event_info.candidate_frames.append(frame_info)
 
-        score = self._calculate_score(frame_info)
+                min_accepted = get_config(self._config.min_accepted_frames, event_info.monitor_id, 1)
+                n_accepted = len(event_info.candidate_frames)
 
-        with event_info.lock:
-            if score > event_info.frame_score:
-                event_info.frame_info = frame_info
-                event_info.frame_score = score
-
-                if event_info.first_detection_time == 0:
-                    event_info.first_detection_time = time.monotonic()
-                self._notification_queue.put(event_info)
+                if n_accepted >= min_accepted and not event_info.notification_was_submitted:
+                    event_info.notification_submission_time = time.monotonic()
+                    event_info.notification_status = NotificationStatus.SUBMITTED
+                    self._notification_queue.put(event_info)

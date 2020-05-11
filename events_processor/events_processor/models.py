@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from enum import Enum, auto
 from queue import Queue
 from threading import Lock
 from typing import Any, Sequence, Dict, Tuple, NewType, Iterable, List, Optional
@@ -117,6 +118,7 @@ class FrameInfo:
     chunk_rects: List[Rect] = field(default_factory=list)
     detections: Sequence[Detection] = field(default_factory=list)
     alarm_box: Optional[Rect] = None
+    score: float = 0
 
     def __str__(self):
         return f"(m: {self.monitor_json['Name']}, eid: {self.event_id}, fid: {self.frame_id})"
@@ -162,19 +164,33 @@ class FrameInfo:
         return self.frame_json['Type']
 
 
+class NotificationStatus(Enum):
+    NONE = auto()
+    SUBMITTED = auto()
+    SENT = auto()
+
+
 @dataclass(init=True, eq=False)
 class EventInfo:
-    frame_info: FrameInfo = field(init=False)
     event_json: Dict = field(default_factory=dict)
-    first_detection_time: float = 0
+    notification_submission_time: float = 0
     frame_score: float = 0
     planned_notification: float = 0
-    notification_sent: bool = False
+    notification_status: NotificationStatus = NotificationStatus.NONE
     all_frames_were_read: bool = False
     lock: Any = field(default_factory=Lock)
+    candidate_frames: List[FrameInfo] = field(default_factory=list)
 
     def __str__(self) -> str:
         return f"(mid: {self.monitor_id}, eid: {self.event_id})"
+
+    @property
+    def notification_sent(self) -> bool:
+        return self.notification_status == NotificationStatus.SENT
+
+    @property
+    def notification_was_submitted(self) -> bool:
+        return self.notification_status in (NotificationStatus.SENT, NotificationStatus.SUBMITTED)
 
     @property
     def event_id(self):

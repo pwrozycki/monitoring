@@ -4,9 +4,9 @@ from typing import Dict
 from injector import inject
 from shapely import geometry
 
-from events_processor.configtools import get_config, ConfigProvider, coords_to_polygons
+from events_processor.configtools import get_config, ConfigProvider
 from events_processor.interfaces import ZoneReader
-from events_processor.models import FrameInfo, Detection, Rect, ZonePolygon, Polygon, ZoneInfo
+from events_processor.models import FrameInfo, Detection, Rect, Polygon, ZoneInfo
 from events_processor.preprocessor import RotatingPreprocessor
 
 INTERSECTION_DISCARDED_THRESHOLD = 1E-6
@@ -37,21 +37,21 @@ class DetectionFilter:
 
     def filter_detections(self, frame_info: FrameInfo):
         for detection in frame_info.detections:
-            self._frame_score_insufficient(detection, frame_info)
-            self._label_incorrect(detection)
-            self._detection_contains_excluded_point(detection, frame_info)
-            self._detection_intersects_excluded_polygon(detection, frame_info)
-            self._detection_intersects_excluded_zone_polygon(detection, frame_info)
-            self._detection_area_not_in_range(detection, frame_info)
+            self._frame_score_check(detection, frame_info)
+            self._label_check(detection)
+            self._excluded_points_check(detection, frame_info)
+            self._excluded_polygons_check(detection, frame_info)
+            self._excluded_zone_polygon_check(detection, frame_info)
+            self._detection_area_check(detection, frame_info)
 
         self.log.debug(frame_info.detections_str)
 
-    def _label_incorrect(self, detection: Detection):
+    def _label_check(self, detection: Detection):
         detection.label = self._labels[detection.label_id]
         if detection.label not in self._config.object_labels:
             detection.discard_reasons.append(f"wrong label {detection.label}")
 
-    def _frame_score_insufficient(self, detection: Detection, frame_info: FrameInfo):
+    def _frame_score_check(self, detection: Detection, frame_info: FrameInfo):
         monitor_id = frame_info.event_info.monitor_id
         details = ""
 
@@ -89,7 +89,7 @@ class DetectionFilter:
 
         return detection_box, movement_poly, intersection_box
 
-    def _detection_area_not_in_range(self, detection: Detection, frame_info: FrameInfo):
+    def _detection_area_check(self, detection: Detection, frame_info: FrameInfo):
         monitor_id = frame_info.event_info.monitor_id
         detection.detection_area_percent = detection.rect.area / self._frame_area(frame_info) * 100
         min_box_area_percentage = get_config(self._config.min_box_area_percentage, monitor_id, 0)
@@ -97,7 +97,7 @@ class DetectionFilter:
         if not min_box_area_percentage <= detection.detection_area_percent <= max_box_area_percentage:
             detection.discard_reasons.append(f"detection box not in range")
 
-    def _detection_intersects_excluded_polygon(self, detection: Detection, frame_info: FrameInfo):
+    def _excluded_polygons_check(self, detection: Detection, frame_info: FrameInfo):
         monitor_id = frame_info.event_info.monitor_id
         detection_box = geometry.box(*detection.rect.box_tuple)
 
@@ -106,7 +106,7 @@ class DetectionFilter:
         if tuple(filter(detection_box.intersects, shapely_polygons)):
             detection.discard_reasons.append(f"intersects excluded polygon")
 
-    def _detection_intersects_excluded_zone_polygon(self, detection: Detection, frame_info: FrameInfo):
+    def _excluded_zone_polygon_check(self, detection: Detection, frame_info: FrameInfo):
         monitor_id = frame_info.event_info.monitor_id
         detection_box = geometry.box(*detection.rect.box_tuple)
 
@@ -120,7 +120,7 @@ class DetectionFilter:
     def _transformed_poly(self, zone: ZoneInfo, poly: Polygon):
         return Polygon(self._transform_coords(zone.monitor_id, zone.width, zone.height, pt) for pt in poly.points)
 
-    def _detection_contains_excluded_point(self, detection: Detection, frame_info: FrameInfo):
+    def _excluded_points_check(self, detection: Detection, frame_info: FrameInfo):
         monitor_id = frame_info.event_info.monitor_id
         detection_box = geometry.box(*detection.rect.box_tuple)
 

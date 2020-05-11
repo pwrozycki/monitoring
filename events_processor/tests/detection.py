@@ -10,9 +10,8 @@ class DetectionTestCase(unittest.TestCase):
 
     def test_single_detection(self):
         notifications = run_pipeline(score=0.8)
-        self.assertAlmostEqual(notifications[0].frame_score, 0.8)
+        self.assertAlmostEqual(notifications[0].frame_info.score, 0.8)
 
-    @unittest.skip("")
     def test_detection_picks_frame_with_higher_score(self):
         notifications = run_pipeline(
             detections={
@@ -27,9 +26,31 @@ class DetectionTestCase(unittest.TestCase):
                 ResourceTemplate.frame_template(end_time=None, frames=3),
                 ResourceTemplate.frame_template(frames=3),
             ],
+            config_updates={
+                'detection_filter': {'min_accepted_frames': '2'}
+            }
         )
+        self.assertAlmostEqual(notifications[0].frame_info.score, 0.9)
 
-        self.assertAlmostEqual(notifications[0].frame_score, 0.9)
+    def test_not_enough_accepted_frames(self):
+        notifications = run_pipeline(
+            detections={
+                '0': [TestDetection(score=0.8)],
+                '2': [TestDetection(score=0.9)],
+            },
+            events=[
+                ResourceTemplate.event_template(end_time=None),
+                ResourceTemplate.event_template(),
+            ],
+            frames=[
+                ResourceTemplate.frame_template(end_time=None, frames=3),
+                ResourceTemplate.frame_template(frames=3),
+            ],
+            config_updates={
+                'detection_filter': {'min_accepted_frames': '3'}
+            }
+        )
+        self.assertAlmostEqual(len(notifications), 0)
 
     def _test_detection_excluded_point(self, detection, exclusion):
         notifications = run_pipeline(
@@ -119,7 +140,7 @@ class DetectionTestCase(unittest.TestCase):
 
     def test_detection_coarse_movement(self):
         notifications = self._test_detection_coarse_movement(0.86)
-        self.assertAlmostEqual(notifications[0].frame_score, 0.86)
+        self.assertAlmostEqual(notifications[0].frame_info.score, 0.86)
 
     def test_detection_coarse_movement_too_small_score(self):
         notifications = self._test_detection_coarse_movement(0.8)
@@ -138,7 +159,7 @@ class DetectionTestCase(unittest.TestCase):
             },
             alarm_box=Rect(0, 0, 1, 1)
         )
-        self.assertAlmostEqual(notifications[0].frame_score, 0.4)
+        self.assertAlmostEqual(notifications[0].frame_info.score, 0.4)
 
     def _test_detection_precise_movement(self, score=0.4):
         notifications = run_pipeline(
@@ -157,7 +178,7 @@ class DetectionTestCase(unittest.TestCase):
 
     def test_detection_precise_movement(self):
         notifications = self._test_detection_precise_movement()
-        self.assertAlmostEqual(notifications[0].frame_score, 0.4)
+        self.assertAlmostEqual(notifications[0].frame_info.score, 0.4)
 
     def test_detection_precise_movement_too_small_score(self):
         notifications = self._test_detection_precise_movement(score=0.2)

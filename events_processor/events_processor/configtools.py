@@ -32,7 +32,6 @@ class ConfigProvider(ConfigParser):
         self._zone_reader = zone_reader
         self.optionxform = str
 
-
         self.read('events_processor.ini')
         self.reread()
 
@@ -61,6 +60,7 @@ class ConfigProvider(ConfigParser):
         self.excluded_zone_prefix = self._read_property('detection_filter', 'excluded_zone_prefix')
         self.object_labels = self._read_property('detection_filter', 'object_labels', 'person').split(',')
         self.label_file = self._read_property('detection_filter', 'label_file')
+        self.min_accepted_frames = self._read_map('detection_filter', 'min_accepted_frames', int)
         self.coarse_movement_min_score = self._read_map('detection_filter', 'coarse_movement_min_score', float)
         self.precise_movement_min_score = self._read_map('detection_filter', 'precise_movement_min_score', float)
         self.max_alarm_to_intersect_diff = self._read_map('detection_filter', 'max_alarm_to_intersect_diff', float)
@@ -121,7 +121,7 @@ class ConfigProvider(ConfigParser):
             return True
         return False
 
-    def _read_map(self, section, config_key, transform):
+    def _read_map(self, section, config_key, transform=lambda x: x):
         recognized_section = self._get_recognized_section(section)
 
         d = {}

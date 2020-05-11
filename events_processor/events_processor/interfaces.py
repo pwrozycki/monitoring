@@ -3,7 +3,7 @@ from typing import Any, Iterable, Optional
 
 from requests import Response
 
-from events_processor.models import FrameInfo, EventInfo, ZoneInfo, Rect, MonitorInfo
+from events_processor.models import FrameInfo, ZoneInfo, Rect, MonitorInfo
 
 
 class Detector(ABC):
@@ -20,7 +20,7 @@ class ImageReader(ABC):
 
 class NotificationSender(ABC):
     @abstractmethod
-    def send(self, event_info: EventInfo, subject: str, message: str) -> bool:
+    def send(self, frame_info: FrameInfo, subject: str, message: str) -> bool:
         raise NotImplemented()
 
 

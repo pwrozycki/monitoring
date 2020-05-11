@@ -15,7 +15,7 @@ from injector import inject
 
 from events_processor.configtools import ConfigProvider
 from events_processor.interfaces import NotificationSender, SystemTime
-from events_processor.models import EventInfo, NotificationQueue
+from events_processor.models import EventInfo, NotificationQueue, NotificationStatus, FrameInfo
 from events_processor.renderer import DetectionRenderer
 
 
@@ -29,14 +29,15 @@ class MailNotificationSender(NotificationSender):
         self._config = config
         self._event_updater = event_updater
 
-    def send(self, event_info: EventInfo, subject: str, message: str) -> bool:
+    def send(self, frame_info: FrameInfo, subject: str, message: str) -> bool:
+        event_info = frame_info.event_info
         msg = MIMEMultipart()
         msg['Subject'] = subject
 
         text = MIMEText(message)
         msg.attach(text)
 
-        img_data = cv2.imencode(".jpg", event_info.frame_info.image)[1].tostring()
+        img_data = cv2.imencode(".jpg", frame_info.image)[1].tostring()
         image = MIMEImage(img_data, name="notification.jpg")
         msg.attach(image)
 
@@ -58,9 +59,8 @@ class MailNotificationSender(NotificationSender):
 class FSNotificationSender(NotificationSender):
     log = logging.getLogger('events_processor.FSNotificationSender')
 
-    def send(self, event_info: EventInfo, subject: str, message: str) -> bool:
-        frame_info = event_info.frame_info
-        cv2.imwrite("mailed_{EventId}_{FrameId}.jpg".format(**frame_info.frame_json), frame_info.image)
+    def send(self, frame_info: FrameInfo, subject: str, message: str) -> bool:
+        cv2.imwrite(f"mailed_{frame_info.event_id}_{frame_info.event_id}.jpg", frame_info.image)
         self.log.info(f"Notification subject: {subject}")
         self.log.info(f"Notification message: {message}")
         return True
@@ -95,17 +95,18 @@ class DetectionNotifier:
         self._config = config
         self._notification_sender = notification_sender
 
-    def notify(self, event_info: EventInfo) -> bool:
+    def notify(self, frame_info: FrameInfo) -> bool:
+        event_info = frame_info.event_info
         mail_dict = {f"Event-{x}": y for (x, y) in event_info.event_json.items()}
-        mail_dict.update({f"Frame-{x}": y for (x, y) in event_info.frame_info.frame_json.items()})
-        mail_dict.update({f"Monitor-{x}": y for (x, y) in event_info.frame_info.monitor_json.items()})
-        mail_dict.update({f"FrameInfo-{x}": y for (x, y) in obj_to_map(event_info.frame_info).items()})
-        mail_dict['Detection-Score'] = 100 * event_info.frame_score
+        mail_dict.update({f"Frame-{x}": y for (x, y) in frame_info.frame_json.items()})
+        mail_dict.update({f"Monitor-{x}": y for (x, y) in frame_info.monitor_json.items()})
+        mail_dict.update({f"FrameInfo-{x}": y for (x, y) in obj_to_map(frame_info).items()})
+        mail_dict['Detection-Score'] = 100 * frame_info.score
 
         subject = self._config.subject.format(**mail_dict)
         message = self._config.message.format(**mail_dict)
 
-        return self._notification_sender.send(event_info, subject, message)
+        return self._notification_sender.send(frame_info, subject, message)
 
 
 def obj_to_map(obj, key_prefix=''):
@@ -135,7 +136,7 @@ class NotificationWorker(Thread):
 
     def _set_notification_time(self, event_info: EventInfo) -> None:
         with event_info.lock:
-            delay = event_info.first_detection_time + self._config.notification_delay_seconds - time.monotonic()
+            delay = event_info.notification_submission_time + self._config.notification_delay_seconds - time.monotonic()
             notification_delay = max(delay, 0)
             event_info.planned_notification = time.monotonic() + notification_delay
 
@@ -161,20 +162,18 @@ class NotificationWorker(Thread):
         self.log.info("Terminating")
 
     def _send_notification(self, event_info: EventInfo) -> None:
-        if event_info.notification_sent:
+        with event_info.lock:
+            notification_frame = max(event_info.candidate_frames, key=lambda frame: frame.score)
+
+        self._detection_renderer.annotate_image(notification_frame)
+        notification_succeeded = self._detection_notifier.notify(notification_frame)
+        if notification_succeeded:
+            event_info.notification_status = NotificationStatus.SENT
+            event_info.candidate_frames.clear()
             self._notifications.remove(event_info)
         else:
-            self._detection_renderer.annotate_image(event_info.frame_info)
-            notification_succeeded = self._detection_notifier.notify(event_info)
-            if notification_succeeded:
-                with event_info.lock:
-                    event_info.notification_sent = True
-                    event_info.frame_info = None
-
-                self._notifications.remove(event_info)
-            else:
-                self.log.error("Notification error, throttling")
-                self._system_time.sleep(5)
+            self.log.error("Notification error, throttling")
+            self._system_time.sleep(5)
 
     def stop(self) -> None:
         self._stop_requested = True

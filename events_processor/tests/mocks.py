@@ -1,6 +1,6 @@
-import copy
 import json
 import time
+from dataclasses import dataclass
 from typing import Any, Iterable, Optional
 
 import numpy as np
@@ -9,7 +9,7 @@ from injector import inject
 from events_processor.configtools import ConfigProvider
 from events_processor.interfaces import Detector, ResourceReader, NotificationSender, ImageReader, SystemTime, \
     ZoneReader, AlarmBoxReader, Engine, MonitorReader
-from events_processor.models import EventInfo, ZoneInfo, Rect, MonitorInfo
+from events_processor.models import ZoneInfo, Rect, MonitorInfo, FrameInfo, EventInfo
 
 
 class TestDetector(Detector):
@@ -53,11 +53,12 @@ class TestResourceReader(ResourceReader):
 
 class TestSender(NotificationSender):
     def __init__(self):
-        self.notifications = {}
+        self.notifications = []
 
-    def send(self, event_info: EventInfo, subject: str, message: str):
-        self.notifications[copy.copy(event_info)] = (subject, message)
-        print(f"Sending notification with score {event_info.frame_score}")
+    def send(self, frame_info: FrameInfo, subject: str, message: str) -> bool:
+        event_info = frame_info.event_info
+        self.notifications.append(NotificationData(event_info, frame_info, subject, message))
+        print(f"Sending notification with score {frame_info.score}")
         return True
 
 
@@ -111,3 +112,11 @@ class TestNoOpEngine(Engine):
 
 class Response:
     pass
+
+
+@dataclass
+class NotificationData:
+    event_info: EventInfo
+    frame_info: FrameInfo
+    subject: str
+    message: str

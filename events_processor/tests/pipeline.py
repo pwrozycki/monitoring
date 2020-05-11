@@ -106,4 +106,4 @@ def run_pipeline(detections=None,
     time.sleep(0.2)
 
     sender = injector.get(NotificationSender)
-    return list(sender.notifications.keys())
+    return list(sender.notifications)

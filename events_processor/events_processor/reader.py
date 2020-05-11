@@ -161,7 +161,7 @@ class FrameReaderWorker(Thread):
 
             self._collect_frames(event_info)
 
-    def _collect_frames(self, event_info):
+    def _collect_frames(self, event_info: EventInfo):
         self.log.info(f"Reading event frames: {event_info}")
 
         frames = self._frame_reader.frames(event_info)
@@ -183,6 +183,8 @@ class FrameReaderWorker(Thread):
 
             if not pending_frames and event_info.end_time is not None:
                 event_info.all_frames_were_read = True
+                if not event_info.notification_was_submitted:
+                    event_info.candidate_frames.clear()
 
     def _frame_data_has_settled(self, frame_info):
         frame_timestamp = datetime.strptime(frame_info.timestamp, '%Y-%m-%d %H:%M:%S')
