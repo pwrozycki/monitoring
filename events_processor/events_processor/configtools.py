@@ -61,10 +61,9 @@ class ConfigProvider(ConfigParser):
         self.object_labels = self._read_property('detection_filter', 'object_labels', 'person').split(',')
         self.label_file = self._read_property('detection_filter', 'label_file')
         self.min_accepted_frames = self._read_map('detection_filter', 'min_accepted_frames', int)
-        self.coarse_movement_min_score = self._read_map('detection_filter', 'coarse_movement_min_score', float)
-        self.precise_movement_min_score = self._read_map('detection_filter', 'precise_movement_min_score', float)
-        self.max_alarm_to_intersect_diff = self._read_map('detection_filter', 'max_alarm_to_intersect_diff', float)
-        self.max_detect_to_intersect_diff = self._read_map('detection_filter', 'max_detect_to_intersect_diff', float)
+        self.movement_min_score = self._read_map('detection_filter', 'movement_min_score', str_to_list)
+        self.max_alarm_intersect_ratio = self._read_map('detection_filter', 'max_alarm_intersect_ratio', str_to_list)
+        self.max_detect_intersect_ratio = self._read_map('detection_filter', 'max_detect_intersect_ratio', str_to_list)
         self.min_box_area_percentage = self._read_map('detection_filter', 'min_box_area_percentage', float)
         self.max_box_area_percentage = self._read_map('detection_filter', 'max_box_area_percentage', float)
         self.excluded_points = self._read_map('detection_filter', 'excluded_points', coords_to_points)
@@ -150,7 +149,11 @@ class ConfigProvider(ConfigParser):
         return self._recognized_config_map.setdefault(section, set())
 
 
-def coords_to_points(string) -> Iterable[Point]:
+def str_to_list(string: str, transform=float) -> Iterable[float]:
+    return list(map(transform, string.split(',')))
+
+
+def coords_to_points(string: str) -> Iterable[Point]:
     return [Point(*map(int, m.groups())) for m in re.finditer(r'(\d+),(\d+)', string)]
 
 

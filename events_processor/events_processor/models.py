@@ -90,8 +90,8 @@ class Detection:
     score: float
     label_id: int
     label: Optional[str] = None
-    alarm_diff: Optional[float] = None
-    detection_diff: Optional[float] = None
+    alarm_ratio: Optional[float] = None
+    detection_ratio: Optional[float] = None
     detection_area_percent: Optional[float] = None
     threshold_acceptance_type: Optional[str] = None
     discard_reasons: List[str] = field(default_factory=list)
@@ -102,10 +102,6 @@ class Detection:
             return f"discarded({','.join(self.discard_reasons)})"
         else:
             return f"accepted({self.threshold_acceptance_type})"
-
-    @property
-    def alarm_measurements_str(self):
-        return f"al+{self.alarm_diff}% det+{self.detection_diff}%" if self.alarm_diff is not None else ""
 
 
 @dataclass
@@ -133,7 +129,8 @@ class FrameInfo:
                f" {self._det_alarm_str(det)}".strip()
 
     def _det_alarm_str(self, det):
-        return f"al_box:{self._alarm_box_perc():.2f}% al+{det.alarm_diff}% det+{det.detection_diff}%" if det.alarm_diff is not None else ""
+        return f"al_box:{self._alarm_box_perc():.2f}% " \
+               f"alr:{det.alarm_ratio:.2f} detr:{det.detection_ratio:.2f}" if det.alarm_ratio is not None else ""
 
     def _alarm_box_perc(self):
         (h, w, _) = self.image.shape

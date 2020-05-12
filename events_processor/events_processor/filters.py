@@ -59,19 +59,21 @@ class DetectionFilter:
         if alarm_rect:
             (detection_box, alarm_box, intersection_box) = self._calculate_boxes(alarm_rect, detection)
             if intersection_box.area > INTERSECTION_DISCARDED_THRESHOLD:
-                detection.alarm_diff = self.relative_difference_percents(alarm_box.area, intersection_box.area)
-                detection.detection_diff = self.relative_difference_percents(detection_box.area, intersection_box.area)
+                detection.alarm_ratio = self._ratio(alarm_box.area, intersection_box.area)
+                detection.detection_ratio = self._ratio(detection_box.area, intersection_box.area)
 
-                if (detection.alarm_diff < get_config(self._config.max_alarm_to_intersect_diff, monitor_id, 50) and
-                        detection.detection_diff < get_config(self._config.max_detect_to_intersect_diff, monitor_id,
-                                                              50) and
-                        detection.score >= get_config(self._config.precise_movement_min_score, monitor_id, 1)):
-                    detection.threshold_acceptance_type = "precise"
-                    return
-
-                if detection.score >= get_config(self._config.coarse_movement_min_score, monitor_id, 1):
-                    detection.threshold_acceptance_type = "coarse"
-                    return
+                for (i, (max_alarm_intersect_ratio,
+                         max_detect_intersect_ratio,
+                         movement_min_score)) in enumerate(zip(
+                    get_config(self._config.max_alarm_intersect_ratio, monitor_id, ()),
+                    get_config(self._config.max_detect_intersect_ratio, monitor_id, ()),
+                    get_config(self._config.movement_min_score, monitor_id, ())
+                )):
+                    if (detection.alarm_ratio <= max_alarm_intersect_ratio and
+                            detection.detection_ratio <= max_detect_intersect_ratio and
+                            detection.score >= movement_min_score):
+                        detection.threshold_acceptance_type = f"threshold {i}"
+                        return
 
         if detection.score >= get_config(self._config.movement_indifferent_min_score, monitor_id, 0):
             detection.threshold_acceptance_type = "indifferent"
@@ -79,8 +81,8 @@ class DetectionFilter:
 
         detection.discard_reasons.append("score insufficient")
 
-    def relative_difference_percents(self, a, b):
-        return int(abs(a - b) / max(a, b) * 100)
+    def _ratio(self, a, b):
+        return max(a, b) / min(a, b)
 
     def _calculate_boxes(self, alarm_box: Rect, detection: Detection):
         movement_poly = geometry.Polygon([pt.tuple for pt in alarm_box.points])

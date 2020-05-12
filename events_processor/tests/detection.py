@@ -132,7 +132,9 @@ class DetectionTestCase(unittest.TestCase):
             },
             config_updates={
                 'detection_filter': {'movement_indifferent_min_score': '0.9',
-                                     'coarse_movement_min_score': '0.85'}
+                                     'movement_min_score': '1,0.85',
+                                     'max_alarm_intersect_ratio': '4,999',
+                                     'max_detect_intersect_ratio': '4,10'}
             },
             alarm_box=Rect(1, 1, 500, 500)
         )
@@ -154,8 +156,9 @@ class DetectionTestCase(unittest.TestCase):
             config_updates={
                 'rotating_preprocessor': {'rotate1': '90'},
                 'detection_filter': {'movement_indifferent_min_score': '0.9',
-                                     'coarse_movement_min_score': '0.85',
-                                     'precise_movement_min_score': '0.3'}
+                                     'movement_min_score': '0.3,0.85',
+                                     'max_alarm_intersect_ratio': '2,999',
+                                     'max_detect_intersect_ratio': '2,10'}
             },
             alarm_box=Rect(0, 0, 1, 1)
         )
@@ -168,9 +171,9 @@ class DetectionTestCase(unittest.TestCase):
             },
             config_updates={
                 'detection_filter': {'movement_indifferent_min_score': '0.9',
-                                     'coarse_movement_min_score': '0.85',
-                                     'precise_movement_min_score': '0.3',
-                                     'max_alarm_to_intersect_diff': '75'}
+                                     'movement_min_score': '0.3,0.85',
+                                     'max_alarm_intersect_ratio': '2,999',
+                                     'max_detect_intersect_ratio': '2,10'}
             },
             alarm_box=Rect(1, 1, 50, 50)
         )
