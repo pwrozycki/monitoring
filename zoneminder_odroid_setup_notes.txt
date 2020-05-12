@@ -107,10 +107,6 @@
         create venv in /root/zone_switcher/venv
         add entry to root's crontab:
             */5 * * * * (source /root/zone_switcher/venv/bin/activate; python /root/zone_switcher/zone_switcher.py)
-   
-9. misc tweaks
-   - add following entries root's crontab (to prevent page allocation failure messages):
-        * * * * * sync && echo 3 > /proc/sys/vm/drop_caches
 
 
 

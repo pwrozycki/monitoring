@@ -33,7 +33,7 @@ class AppBindingsModule(Module):
         binder.bind(NotificationQueue, to=Queue())
         binder.bind(FrameQueue, to=Queue())
 
-        binder.bind(Engine, SynchronizedDetectionEngine)
+        binder.bind(Engine, SynchronizedDetectionEngine, scope=singleton)
         binder.bind(Detector, to=CoralDetector)
         binder.bind(NotificationSender, to=MailNotificationSender)
         binder.bind(ImageReader, to=FSImageReader)
