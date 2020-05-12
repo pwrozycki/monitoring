@@ -52,14 +52,14 @@ class CoralDetector(Detector):
         self._config = config
         self._engine = engine
         self._alarm_box_reader = alarm_box_reader
-        self._transform_coords = preprocessor.transform_coords
+        self._preprocessor = preprocessor
         self._detection_renderer = detection_renderer
 
     def detect(self, frame_info: FrameInfo) -> None:
         monitor_id = frame_info.event_info.monitor_id
         img = Image.fromarray(frame_info.image)
 
-        box = self._calculate_detection_box(frame_info, img, monitor_id)
+        box = self._calculate_detection_box(frame_info, img)
 
         frame_info.chunk_rects = self._calculate_chunk_rects(box, img, monitor_id)
 
@@ -72,23 +72,19 @@ class CoralDetector(Detector):
 
         frame_info.detections = result
 
-    def _calculate_detection_box(self, frame_info, img, monitor_id):
+    def _calculate_detection_box(self, frame_info: FrameInfo, img):
         event_id = frame_info.event_id
         frame_id = frame_info.frame_id
-        height = frame_info.event_info.height
-        width = frame_info.event_info.width
 
         alarm_box = self._alarm_box_reader.read(event_id, frame_id, self._config.excluded_zone_prefix)
         if alarm_box:
-            transformed_points = (self._transform_coords(monitor_id, width, height, pt)
-                                  for pt in alarm_box.points)
-            box = bounding_box(transformed_points)
+            box = bounding_box(self._preprocessor.transform_frame_points(frame_info, alarm_box.points))
             frame_info.alarm_box = box
         else:
             box = Rect(0, 0, img.width, img.height)
         return box
 
-    def _calculate_chunk_rects(self, box, img, monitor_id):
+    def _calculate_chunk_rects(self, box: Rect, img, monitor_id):
         x_chunks, y_chunks = self._calculate_optimal_chunks_number(box, monitor_id)
         box = self._rect_expanded_to_box(box, 300 * x_chunks, 300 * y_chunks, img.width, img.height)
         chunk_rects = self._chunk_rects(box, x_chunks, y_chunks)
@@ -99,13 +95,13 @@ class CoralDetector(Detector):
 
         return chunk_rects
 
-    def _calculate_optimal_chunks_number(self, box, monitor_id):
+    def _calculate_optimal_chunks_number(self, box: Rect, monitor_id):
         configured_chunks = get_config(self._config.detection_chunks, monitor_id, (1, 1))
         x_chunks = max(min(configured_chunks[0], math.ceil(box.width / 300)), 1)
         y_chunks = max(min(configured_chunks[1], math.ceil(box.height / 300)), 1)
         return x_chunks, y_chunks
 
-    def _rect_expanded_to_box(self, rect, ideal_box_w, ideal_box_h, clip_w, clip_h):
+    def _rect_expanded_to_box(self, rect: Rect, ideal_box_w, ideal_box_h, clip_w, clip_h):
         r = Rect(*map(int, rect.box_tuple))
         mid_x, mid_y = ((r.left + r.right) // 2, (r.top + r.bottom) // 2)
 
@@ -113,7 +109,7 @@ class CoralDetector(Detector):
 
         return self._calculate_expanded_box(mid_x, mid_y, box_h, box_w, clip_h, clip_w)
 
-    def _debug_draw(self, frame_info, img):
+    def _debug_draw(self, frame_info: FrameInfo, img):
         if self._config.debug_images:
             dw = Draw(img)
 
@@ -124,7 +120,7 @@ class CoralDetector(Detector):
 
             img.save(f"debug_{frame_info.event_id}_{frame_info.frame_id}.jpg")
 
-    def _chunk_rects(self, box, x_chunks, y_chunks):
+    def _chunk_rects(self, box: Rect, x_chunks, y_chunks):
         rects = []
         chunk_width = box.width // x_chunks
         chunk_height = box.height // y_chunks
@@ -151,7 +147,7 @@ class CoralDetector(Detector):
 
         return detections
 
-    def _calculate_box_size(self, r, ideal_box_w, ideal_box_h, clip_w, clip_h):
+    def _calculate_box_size(self, r: Rect, ideal_box_w, ideal_box_h, clip_w, clip_h):
         (box_w, box_h) = r.width, r.height
 
         ideal_box_ratio = ideal_box_h / ideal_box_w

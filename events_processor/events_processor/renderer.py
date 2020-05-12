@@ -38,17 +38,10 @@ class DetectionRenderer:
 
         monitor_id = frame_info.event_info.monitor_id
         for poly in self._config.excluded_zone_polygons.get(monitor_id, []):
-            self.draw_poly(image, self.transform_points(frame_info, poly.polygon.points))
+            self.draw_poly(image, self._preprocessor.transform_frame_points(frame_info, poly.polygon.points))
 
         for poly in self._config.excluded_polygons.get(monitor_id, []):
-            self.draw_poly(image, self.transform_points(frame_info, poly.points))
-
-    def transform_points(self, frame_info, pts):
-        monitor_id = frame_info.event_info.monitor_id
-        width = frame_info.event_info.width
-        height = frame_info.event_info.height
-
-        return [self._preprocessor.transform_coords(monitor_id, width, height, pt) for pt in pts]
+            self.draw_poly(image, self._preprocessor.transform_frame_points(frame_info, poly.points))
 
     def draw_rect(self, image, box: Rect, color, thickness):
         rect = Rect(*map(int, box.box_tuple))

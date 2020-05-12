@@ -22,7 +22,7 @@ class DetectionFilter:
                  config: ConfigProvider):
         self._config = config
         self._labels = self._read_labels()
-        self._transform_coords = preprocessor.transform_coords
+        self._preprocessor = preprocessor
         self._zone_reader = zone_reader
         self._config = config
 
@@ -55,9 +55,9 @@ class DetectionFilter:
         monitor_id = frame_info.event_info.monitor_id
         details = ""
 
-        alarm_rect = frame_info.alarm_box
-        if alarm_rect:
-            (detection_box, alarm_box, intersection_box) = self._calculate_boxes(alarm_rect, detection)
+        alarm_box = frame_info.alarm_box
+        if alarm_box:
+            (detection_box, intersection_box) = self._calculate_boxes(alarm_box, detection)
             if intersection_box.area > INTERSECTION_DISCARDED_THRESHOLD:
                 detection.alarm_ratio = self._ratio(alarm_box.area, intersection_box.area)
                 detection.detection_ratio = self._ratio(detection_box.area, intersection_box.area)
@@ -89,7 +89,7 @@ class DetectionFilter:
         detection_box = geometry.box(*detection.rect.box_tuple)
         intersection_box = movement_poly.intersection(detection_box)
 
-        return detection_box, movement_poly, intersection_box
+        return detection_box, intersection_box
 
     def _detection_area_check(self, detection: Detection, frame_info: FrameInfo):
         monitor_id = frame_info.event_info.monitor_id
@@ -120,7 +120,7 @@ class DetectionFilter:
                 return
 
     def _transformed_poly(self, zone: ZoneInfo, poly: Polygon):
-        return Polygon(self._transform_coords(zone.monitor_id, zone.width, zone.height, pt) for pt in poly.points)
+        return Polygon(self._preprocessor.transform_points(zone.monitor_id, zone.width, zone.height, poly.points))
 
     def _excluded_points_check(self, detection: Detection, frame_info: FrameInfo):
         monitor_id = frame_info.event_info.monitor_id

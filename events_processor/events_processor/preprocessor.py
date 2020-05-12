@@ -1,4 +1,4 @@
-from typing import Tuple, Any
+from typing import Tuple, Any, Iterable
 
 import cv2
 from injector import inject
@@ -30,13 +30,22 @@ class RotatingPreprocessor:
         return cv2.UMat.get(
             cv2.warpAffine(cv2.UMat(mat), rotation_mat, (bound_w, bound_h), flags=cv2.INTER_CUBIC))
 
-    def transform_coords(self, monitor_id: str, w: int, h: int, point: Point) -> Point:
+    def transform_point(self, monitor_id: str, w: int, h: int, point: Point) -> Point:
         angle = self._config.rotations.get(monitor_id, 0)
         if angle == 0:
             return point
         rotation_matrix = self._get_rotation_matrix(angle, w, h)[2]
         result = rotation_matrix.dot((point.x, point.y, 1))
-        return Point(*map(int, result))
+        return Point(*map(lambda x: int(round(x)), result))
+
+    def transform_points(self, monitor_id: str, w: int, h: int, points: Iterable[Point]) -> Iterable[Point]:
+        return tuple(self.transform_point(monitor_id, w, h, pt) for pt in points)
+
+    def transform_frame_points(self, frame_info: FrameInfo, points: Iterable[Point]) -> Iterable[Point]:
+        width = frame_info.event_info.width
+        height = frame_info.event_info.height
+        monitor_id = frame_info.event_info.monitor_id
+        return self.transform_points(monitor_id, width, height, points)
 
     @staticmethod
     def _get_rotation_matrix(angle: float, w: int, h: int) -> Tuple[int, int, Any]:

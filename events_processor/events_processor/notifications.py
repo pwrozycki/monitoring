@@ -136,28 +136,29 @@ class NotificationWorker(Thread):
 
     def _set_notification_time(self, event_info: EventInfo) -> None:
         with event_info.lock:
-            delay = event_info.notification_submission_time + self._config.notification_delay_seconds - time.monotonic()
-            notification_delay = max(delay, 0)
-            event_info.planned_notification = time.monotonic() + notification_delay
+            event_info.planned_notification = \
+                event_info.notification_submission_time + self._config.notification_delay_seconds
 
     def run(self, a=None) -> None:
         while not self._stop_requested:
+            seconds_to_notification = None
             notification = self._get_closest_notification_event()
-            seconds_to_notification = self._get_notification_remaining_secs(notification)
 
-            if seconds_to_notification == 0:
-                if notification:
+            if notification:
+                seconds_to_notification = self._get_notification_remaining_secs(notification)
+                if seconds_to_notification == 0:
                     self._send_notification(notification)
-            else:
-                try:
-                    incoming_notification = self._notification_queue.get(timeout=seconds_to_notification)
-                    if self._stop_requested:
-                        break
+                    continue
 
-                    self._set_notification_time(incoming_notification)
-                    self._notifications.add(incoming_notification)
-                except Empty:
-                    pass
+            try:
+                incoming_notification = self._notification_queue.get(timeout=seconds_to_notification)
+                if self._stop_requested:
+                    break
+
+                self._set_notification_time(incoming_notification)
+                self._notifications.add(incoming_notification)
+            except Empty:
+                pass
 
         self.log.info("Terminating")
 
@@ -181,13 +182,7 @@ class NotificationWorker(Thread):
         self._notification_queue.put(None)
 
     def _get_closest_notification_event(self) -> Optional[EventInfo]:
-        if self._notifications:
-            return min(self._notifications, key=lambda x: x.planned_notification)
+        return min(self._notifications, key=lambda x: x.planned_notification, default=None)
 
-        return None
-
-    def _get_notification_remaining_secs(self, notification: Optional[EventInfo]) -> Optional[float]:
-        if notification:
-            return max(notification.planned_notification - time.monotonic(), 0)
-        else:
-            return None
+    def _get_notification_remaining_secs(self, notification: EventInfo) -> Optional[float]:
+        return max(notification.planned_notification - time.monotonic(), 0)

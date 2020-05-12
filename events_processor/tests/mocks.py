@@ -10,20 +10,28 @@ from events_processor.configtools import ConfigProvider
 from events_processor.interfaces import Detector, ResourceReader, NotificationSender, ImageReader, SystemTime, \
     ZoneReader, AlarmBoxReader, Engine, MonitorReader
 from events_processor.models import ZoneInfo, Rect, MonitorInfo, FrameInfo, EventInfo
+from events_processor.preprocessor import RotatingPreprocessor
+from events_processor.shapeutils import bounding_box
 
 
 class TestDetector(Detector):
     @inject
-    def __init__(self, alarm_box_reader: AlarmBoxReader, config: ConfigProvider):
+    def __init__(self,
+                 alarm_box_reader: AlarmBoxReader,
+                 config: ConfigProvider,
+                 preprocessor: RotatingPreprocessor):
         self.detections = {}
         self._alarm_box_reader = alarm_box_reader
         self._config = config
+        self._preprocessor = preprocessor
 
-    def detect(self, frame_info) -> None:
+    def detect(self, frame_info: FrameInfo) -> None:
         event_id = frame_info.event_id
         frame_id = frame_info.frame_id
-        # TODO: prozycki: alarm box needs to be rotated according to rotations, otherwise tests involving rotations will fail
-        frame_info.alarm_box = self._alarm_box_reader.read(event_id, frame_id, self._config.excluded_zone_prefix)
+
+        box = self._alarm_box_reader.read(event_id, frame_id, self._config.excluded_zone_prefix)
+        if box:
+            frame_info.alarm_box = bounding_box(self._preprocessor.transform_frame_points(frame_info, box.points))
         frame_info.detections = self.detections.get(event_id, {}).get(frame_id, [])
 
 
