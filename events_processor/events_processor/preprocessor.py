@@ -7,10 +7,6 @@ from events_processor.configtools import ConfigProvider
 from events_processor.models import FrameInfo, Point
 
 
-# TODO: prozycki: refactor and move to separate classes: logic responsible for:
-# - reading configuration
-# - applying transformation to point
-
 class RotatingPreprocessor:
     @inject
     def __init__(self, config: ConfigProvider):
