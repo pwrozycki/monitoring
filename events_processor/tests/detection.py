@@ -1,19 +1,26 @@
 import unittest
 
 import numpy as np
+from injector import Injector
 
+from events_processor.bindings import AppBindingsModule
 from events_processor.models import Rect, ZoneInfo
-from tests.pipeline import TestDetection, ResourceTemplate, run_pipeline
+from tests.bindings import TestBindingsModule
+from tests.pipeline import TestDetection, ResourceTemplate, Pipeline
 
 
 class DetectionTestCase(unittest.TestCase):
 
+    def setUp(self) -> None:
+        injector = Injector([AppBindingsModule, TestBindingsModule])
+        self._pipeline = injector.create_object(Pipeline)
+
     def test_single_detection(self):
-        notifications = run_pipeline(score=0.8)
+        notifications = self._pipeline.run_with(score=0.8)
         self.assertAlmostEqual(notifications[0].frame_info.score, 0.8)
 
     def test_detection_picks_frame_with_higher_score(self):
-        notifications = run_pipeline(
+        notifications = self._pipeline.run_with(
             detections={
                 '0': [TestDetection(score=0.8)],
                 '2': [TestDetection(score=0.9)],
@@ -33,7 +40,7 @@ class DetectionTestCase(unittest.TestCase):
         self.assertAlmostEqual(notifications[0].frame_info.score, 0.9)
 
     def test_not_enough_accepted_frames(self):
-        notifications = run_pipeline(
+        notifications = self._pipeline.run_with(
             detections={
                 '0': [TestDetection(score=0.8)],
                 '2': [TestDetection(score=0.9)],
@@ -53,7 +60,7 @@ class DetectionTestCase(unittest.TestCase):
         self.assertAlmostEqual(len(notifications), 0)
 
     def _test_detection_excluded_point(self, detection, exclusion):
-        notifications = run_pipeline(
+        notifications = self._pipeline.run_with(
             detections={
                 '0': [TestDetection(bounding_box=np.array(detection))],
             },
@@ -72,7 +79,7 @@ class DetectionTestCase(unittest.TestCase):
         self.assertEqual(len(notifications), 1)
 
     def test_detection_excluded_polygons_within_detection(self):
-        notifications = run_pipeline(
+        notifications = self._pipeline.run_with(
             detections={
                 '0': [TestDetection(bounding_box=np.array([1, 1, 50, 50]))],
             },
@@ -92,7 +99,7 @@ class DetectionTestCase(unittest.TestCase):
         self.assertEqual(len(notifications), 1)
 
     def _test_detection_excluded_zone_polygons(self, excluded_zone, detection):
-        notifications = run_pipeline(
+        notifications = self._pipeline.run_with(
             detections={
                 '0': [TestDetection(score=0.4, bounding_box=np.array(detection))],
             },
@@ -101,7 +108,7 @@ class DetectionTestCase(unittest.TestCase):
         return notifications
 
     def test_detection_excluded_zone_polygons_within_detection_rotation(self):
-        notifications = run_pipeline(
+        notifications = self._pipeline.run_with(
             detections={
                 '0': [TestDetection(score=0.4, bounding_box=np.array([0, 1000, 1, 999]))],
             },
@@ -114,7 +121,7 @@ class DetectionTestCase(unittest.TestCase):
         self.assertEqual(len(notifications), 0)
 
     def test_detection_no_movement_too_small_score(self):
-        notifications = run_pipeline(
+        notifications = self._pipeline.run_with(
             detections={
                 '0': [TestDetection(bounding_box=np.array([0, 1, 50, 50]))],
             },
@@ -126,7 +133,7 @@ class DetectionTestCase(unittest.TestCase):
         self.assertEqual(len(notifications), 0)
 
     def _test_detection_coarse_movement(self, score):
-        notifications = run_pipeline(
+        notifications = self._pipeline.run_with(
             detections={
                 '0': [TestDetection(score=score, bounding_box=np.array([1, 1, 50, 50]))],
             },
@@ -149,7 +156,7 @@ class DetectionTestCase(unittest.TestCase):
         self.assertEqual(len(notifications), 0)
 
     def test_detection_precise_movement_rotation(self):
-        notifications = run_pipeline(
+        notifications = self._pipeline.run_with(
             detections={
                 '0': [TestDetection(score=0.4, bounding_box=np.array([0, 1000, 1, 999]))],
             },
@@ -165,7 +172,7 @@ class DetectionTestCase(unittest.TestCase):
         self.assertAlmostEqual(notifications[0].frame_info.score, 0.4)
 
     def _test_detection_precise_movement(self, score=0.4):
-        notifications = run_pipeline(
+        notifications = self._pipeline.run_with(
             detections={
                 '0': [TestDetection(score=score, bounding_box=np.array([1, 1, 50, 50]))],
             },
