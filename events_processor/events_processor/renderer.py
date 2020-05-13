@@ -23,23 +23,29 @@ class DetectionRenderer:
     def annotate_image(self, frame_info: FrameInfo) -> Any:
         self.log.debug(f'Rendering detection: {frame_info}')
 
+        self._draw_excluded_polygons(frame_info)
+
+        def rect_drawer(box, color):
+            return self.draw_rect(frame_info.image, box, color, 2)
+
+        self.draw_boxes(frame_info, rect_drawer)
+
+        self._draw_detections(frame_info)
+
+    def _draw_detections(self, frame_info):
         image = frame_info.image
-        for (i, detection) in enumerate(reversed(frame_info.detections)):
+        for (i, detection) in enumerate(sorted(frame_info.detections, key=lambda d: d.score)):
             discarded = bool(detection.discard_reasons)
 
             box = detection.rect
             self.draw_rect(image, detection.rect, "blue" if not discarded else "white", 1)
             self._draw_text(f'{detection.label} {detection.score * 100:.0f}%', box, image)
 
-        def rect_drawer(box, color):
-            return self.draw_rect(image, box, color, 2)
-
-        self.draw_boxes(frame_info, rect_drawer)
-
+    def _draw_excluded_polygons(self, frame_info):
+        image = frame_info.image
         monitor_id = frame_info.event_info.monitor_id
         for poly in self._config.excluded_zone_polygons.get(monitor_id, []):
             self.draw_poly(image, self._preprocessor.transform_frame_points(frame_info, poly.polygon.points))
-
         for poly in self._config.excluded_polygons.get(monitor_id, []):
             self.draw_poly(image, self._preprocessor.transform_frame_points(frame_info, poly.points))
 
