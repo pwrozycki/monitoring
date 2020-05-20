@@ -56,7 +56,7 @@ class ResourceReader(ABC):
 
 class Engine(ABC):
     @abstractmethod
-    def detect(selfself, img, threshold):
+    def detect(self, img, threshold):
         raise NotImplemented
 
     @abstractmethod
