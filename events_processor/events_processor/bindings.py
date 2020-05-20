@@ -10,10 +10,12 @@ from events_processor.filters import DetectionFilter
 from events_processor.interfaces import Detector, NotificationSender, ImageReader, SystemTime, ZoneReader, \
     ResourceReader, AlarmBoxReader, Engine, MonitorReader
 from events_processor.models import NotificationQueue, FrameQueue
-from events_processor.notifications import MailNotificationSender, NotificationWorker, FSNotificationSender
+from events_processor.notifications import MailNotificationSender, NotificationWorker, FSNotificationSender, \
+    DetectionNotifier, EventUpdater
 from events_processor.preprocessor import RotatingPreprocessor
 from events_processor.processor import FSImageReader, FrameProcessorWorker
 from events_processor.reader import FrameReader, WebResourceReader, FrameReaderWorker
+from events_processor.renderer import DetectionRenderer
 
 
 class AppBindingsModule(Module):
@@ -23,6 +25,9 @@ class AppBindingsModule(Module):
         binder.bind(MainController)
         binder.bind(DetectionFilter)
         binder.bind(RotatingPreprocessor)
+        binder.bind(DetectionNotifier)
+        binder.bind(EventUpdater)
+        binder.bind(DetectionRenderer)
 
         binder.bind(ConfigProvider, scope=singleton)
 

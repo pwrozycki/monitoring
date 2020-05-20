@@ -12,7 +12,7 @@ from tests.pipeline import TestDetection, ResourceTemplate, Pipeline
 class DetectionTestCase(unittest.TestCase):
 
     def setUp(self) -> None:
-        injector = Injector([AppBindingsModule, TestBindingsModule])
+        injector = Injector([AppBindingsModule, TestBindingsModule], auto_bind=False)
         self._pipeline = injector.create_object(Pipeline)
 
     def test_single_detection(self):

@@ -26,7 +26,7 @@ def main():
     if args.fs_notifier:
         modules.append(FSNotificationSenderOverride)
 
-    injector = Injector(modules)
+    injector = Injector(modules, auto_bind=False)
     config = injector.get(ConfigProvider)
     if args.event_ids:
         config['debug']['event_ids'] = args.event_ids

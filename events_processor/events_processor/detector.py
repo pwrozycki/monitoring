@@ -45,7 +45,7 @@ class CoralDetector(Detector):
     @inject
     def __init__(self,
                  config: ConfigProvider,
-                 engine: SynchronizedDetectionEngine,
+                 engine: Engine,
                  alarm_box_reader: AlarmBoxReader,
                  preprocessor: RotatingPreprocessor,
                  detection_renderer: DetectionRenderer):
