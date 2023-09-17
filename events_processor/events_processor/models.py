@@ -134,7 +134,7 @@ class FrameInfo:
 
     def _alarm_box_perc(self):
         (h, w, _) = self.image.shape
-        return self.alarm_box.area / (h * w) * 100 if h != null and w != null else 0
+        return self.alarm_box.area / (h * w) * 100 if h != 0 and w != 0 else 0
 
     @property
     def verdict(self):
